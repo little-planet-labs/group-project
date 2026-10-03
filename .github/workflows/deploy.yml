@@ -1,0 +1,94 @@
+# Production deploy. Merged code is still contributor code, so the job that
+# installs and builds it holds no secrets. The App key and the Cloudflare token
+# live in separate jobs that run only scripts/ci (protected) and a pinned
+# wrangler, from a sparse checkout of protected paths. The deploy job writes the
+# production _headers (CSP floor) over whatever the build shipped.
+# The sparse checkout is load-bearing (docs/SETUP.md, spike 12): never widen it.
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency: deploy
+
+jobs:
+  history:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: /scripts/ci/
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - id: app
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ vars.GP_APP_ID }}
+          private-key: ${{ secrets.GP_APP_PRIVATE_KEY }}
+          permission-contents: read
+          permission-issues: read
+          permission-pull-requests: read
+      - run: node scripts/ci/fetch-history.mjs
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          APP_SLUG: ${{ steps.app.outputs.app-slug }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: history
+          path: src/lib/generated/history.json
+          retention-days: 7
+
+  build:
+    needs: history
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - run: npm ci
+      - uses: actions/download-artifact@v8
+        with:
+          name: history
+          path: src/lib/generated
+      - run: npm run build
+      - uses: actions/upload-artifact@v7
+        with:
+          name: site
+          path: build/
+          retention-days: 7
+          include-hidden-files: true
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /scripts/ci/
+            /wrangler.jsonc
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - uses: actions/download-artifact@v8
+        with:
+          name: site
+          path: build
+      - run: node scripts/ci/preview-headers.mjs build --production
+      - run: npx --yes wrangler@4.147.0 deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

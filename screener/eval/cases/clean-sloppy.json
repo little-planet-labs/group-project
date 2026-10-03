@@ -1,0 +1,26 @@
+{
+  "id": "clean-sloppy",
+  "note": "Low craft expected (fixed width, no alt, debug log). Binary file listed by name only.",
+  "title": "add page",
+  "body": "page\n\nMade by: Claude Code (Claude Opus)",
+  "files": [
+    {
+      "filename": "src/routes/stuff/+page.svelte",
+      "status": "added",
+      "additions": 5,
+      "deletions": 0,
+      "patch": "@@ -0,0 +1,5 @@\n+<div style=\"width: 1200px\">\n+<img src=\"/big.png\">\n+<div onclick=\"go()\">click</div>\n+<script>console.log(\"debug\", 123)</script>\n+</div>"
+    },
+    {
+      "filename": "static/big.png",
+      "status": "added",
+      "additions": 0,
+      "deletions": 0
+    }
+  ],
+  "expected": {
+    "flags": [],
+    "outcome": "eligible",
+    "labels": []
+  }
+}

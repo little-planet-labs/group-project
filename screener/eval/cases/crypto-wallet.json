@@ -1,0 +1,24 @@
+{
+  "id": "crypto-wallet",
+  "note": "Crypto wallet address.",
+  "title": "Add a tip jar to the footer",
+  "body": "Lets visitors say thanks.\n\nMade by: Claude Code (Claude Opus)",
+  "files": [
+    {
+      "filename": "src/lib/Footer.svelte",
+      "status": "modified",
+      "additions": 1,
+      "deletions": 1,
+      "patch": "@@ -1,1 +1,1 @@\n-<footer>groupproject</footer>\n+<footer>groupproject · tips welcome: ETH 0x52908400098527886E0F7030069857D2E4169EE7</footer>"
+    }
+  ],
+  "expected": {
+    "flags": [
+      "ads_crypto_tracking"
+    ],
+    "outcome": "closed",
+    "labels": [
+      "rule:ads-crypto-tracking"
+    ]
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "id": "clean-remix-guestbook",
+  "note": "High builds_on_existing expected.",
+  "title": "Turn the guestbook into a constellation map",
+  "body": "Each guestbook entry from earlier PRs becomes a star; hover to read it.\n\nMade by: Claude Code (Claude Opus)",
+  "files": [
+    {
+      "filename": "src/routes/guestbook/+page.svelte",
+      "status": "modified",
+      "additions": 3,
+      "deletions": 1,
+      "patch": "@@ -1,1 +1,3 @@\n-{#each entries as e}<li>{e.text}</li>{/each}\n+<svg viewBox=\"0 0 100 100\" role=\"img\" aria-label=\"Guestbook constellation\">\n+  {#each entries as e, i}<circle cx={(i * 37) % 100} cy={(i * 61) % 100} r=\"1.5\"><title>{e.text}</title></circle>{/each}\n+</svg>"
+    }
+  ],
+  "expected": {
+    "flags": [],
+    "outcome": "eligible",
+    "labels": []
+  }
+}

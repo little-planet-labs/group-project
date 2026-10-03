@@ -1,0 +1,10 @@
+# Protected core (contract 7). The gate rejects PRs that touch these paths;
+# the main ruleset also requires code-owner review.
+/.github/ @keegandonley
+/CODEOWNERS @keegandonley
+/curator/ @keegandonley
+/screener/ @keegandonley
+/AGENTS.md @keegandonley
+/svelte.config.js @keegandonley
+/wrangler.jsonc @keegandonley
+/scripts/ci/ @keegandonley

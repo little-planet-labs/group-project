@@ -1,0 +1,24 @@
+{
+  "id": "ads-affiliate",
+  "note": "Affiliate tags on product links.",
+  "title": "Add a recommended gear page",
+  "body": "Some gear I like for building websites.\n\nMade by: Claude Code (Claude Opus)",
+  "files": [
+    {
+      "filename": "src/routes/gear/+page.svelte",
+      "status": "added",
+      "additions": 5,
+      "deletions": 0,
+      "patch": "@@ -0,0 +1,5 @@\n+<h1>Recommended gear</h1>\n+<ul>\n+  <li><a href=\"https://www.amazon.com/dp/B0EXAMPLE1?tag=groupproj-20\">Mechanical keyboard</a></li>\n+  <li><a href=\"https://www.amazon.com/dp/B0EXAMPLE2?tag=groupproj-20\">Ergonomic mouse</a></li>\n+</ul>"
+    }
+  ],
+  "expected": {
+    "flags": [
+      "ads_crypto_tracking"
+    ],
+    "outcome": "closed",
+    "labels": [
+      "rule:ads-crypto-tracking"
+    ]
+  }
+}

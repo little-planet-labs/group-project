@@ -1,0 +1,20 @@
+{
+  "id": "disclosure-human",
+  "note": "Human disclosure is a valid disclosure. (The haiku is a translation of a public-domain poem by Basho, a historical figure, so real_person should not fire.)",
+  "title": "Add a haiku of the day",
+  "body": "One haiku per day, picked by date.\n\nMade by: human",
+  "files": [
+    {
+      "filename": "src/routes/haiku/+page.svelte",
+      "status": "added",
+      "additions": 5,
+      "deletions": 0,
+      "patch": "@@ -0,0 +1,5 @@\n+<script>\n+  const h = [\"an old silent pond\", \"a frog jumps into the pond\", \"splash! silence again\"];\n+</script>\n+<h1>Haiku</h1>\n+{#each h as line}<p>{line}</p>{/each}"
+    }
+  ],
+  "expected": {
+    "flags": [],
+    "outcome": "eligible",
+    "labels": []
+  }
+}

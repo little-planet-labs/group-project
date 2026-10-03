@@ -1,0 +1,23 @@
+# Deletes a PR's Worker Preview when the PR closes. pull_request_target has
+# secrets, so this job has no checkout and runs no PR code. The PR number is an
+# integer from the event. --worker-name is needed because there is no
+# wrangler.jsonc on disk.
+name: Preview cleanup
+
+on:
+  pull_request_target:
+    types: [closed]
+
+permissions: {}
+
+jobs:
+  delete:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - run: npx --yes wrangler@4.147.0 preview delete --name pr-${{ github.event.pull_request.number }} --worker-name groupproject --skip-confirmation
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

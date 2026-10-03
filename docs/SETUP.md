@@ -1,0 +1,148 @@
+# One-time setup
+
+The owner's checklist for wiring groupproject to GitHub and Cloudflare. Do it in order. The repo is `little-planet-labs/group-project`.
+
+## 1. Cloudflare
+
+1. In Cloudflare, add two zones: `groupproject.lol` and `groupproject.dev`. Cloudflare shows two nameservers for each.
+2. In Vercel, for each domain, go to Domains > the domain > Nameservers > Edit, and enter the Cloudflare nameservers. Registration stays at Vercel.
+3. Wait until both zones show **Active** in Cloudflare.
+4. Upgrade the account to **Workers Paid** (500 live previews per Worker).
+5. Create an API token (My Profile > API Tokens > Create Token) with **Account > Workers Scripts > Edit**. Custom-domain routes may also need **Zone > Workers Routes > Edit** and **Zone > DNS > Edit** on both zones; check this in the first deploy (live spike).
+6. Copy the **Account ID** from the Workers overview page.
+
+## 2. GitHub repository
+
+1. Use `little-planet-labs/group-project`. It's private and empty for now.
+2. **Make the repo public before launch.** Free Actions minutes and outside fork PRs both depend on it.
+3. Settings > Actions > General > fork pull request workflows: keep GitHub's default, which requires approval for first-time contributors.
+4. Settings > General > Pull Requests: squash merging only. Turn off **Allow merge commits** and **Allow rebase merging**, keep **Allow squash merging** on, and set its default commit message to **Pull request title and description**. The History page reads each entry's title and `Made by:` line from the squash commit, which the author can't edit after the merge.
+
+## 3. GitHub App ("groupproject App")
+
+1. Create a GitHub App owned by the `little-planet-labs` org (Org settings > Developer settings > GitHub Apps > New).
+2. Repository permissions:
+   - Contents: Read and write
+   - Pull requests: Read and write
+   - Issues: Read and write
+   - Checks: Read and write
+   - Metadata: Read (always on)
+
+   **Never grant the App the Workflows permission.** With it, a leaked App token could rewrite `.github/workflows/`. Each workflow also mints its App token with only the permissions that step needs.
+3. Deploy the screener Worker first (see "Setup (owner)" in `screener/README.md`) so you have its URL. Then set the webhook:
+   - URL: the screener Worker URL
+   - Secret: a long random string; save it for the screener's `GITHUB_WEBHOOK_SECRET`
+   - Subscribe to events: **Pull request**
+4. Generate a private key and download the `.pem`.
+5. Note the **App ID** from the App's settings page.
+6. Install the App on `little-planet-labs/group-project` only.
+
+## 4. Actions secrets and variables
+
+In the repo (Settings > Secrets and variables > Actions), or at the org level scoped to this repo:
+
+| Kind | Name | Value |
+|---|---|---|
+| Secret | `ANTHROPIC_API_KEY` | Anthropic API key for the curator |
+| Secret | `GP_APP_PRIVATE_KEY` | The App's `.pem`, pasted whole |
+| Secret | `CLOUDFLARE_API_TOKEN` | The token from step 1.5 |
+| Secret | `CLOUDFLARE_ACCOUNT_ID` | The account ID from step 1.6 |
+| Variable | `GP_APP_ID` | The App ID from step 3.5 |
+
+## 5. Screener Worker secrets
+
+Set these with `wrangler secret put <NAME>` in `screener/`:
+
+- `GITHUB_APP_ID`: the App ID
+- `GITHUB_APP_PRIVATE_KEY`: the App key as **PKCS#8** PEM. GitHub gives PKCS#1; convert it with `openssl pkcs8 -topk8 -nocrypt -in app.pem -out app-pkcs8.pem`.
+- `GITHUB_WEBHOOK_SECRET`: the webhook secret from step 3.3
+- `TYPESAFE_API_KEY`: from console.typesafe.ai/keys
+
+## 6. `main` ruleset
+
+Settings > Rules > Rulesets > New branch ruleset, target `main`, enforcement Active:
+
+- Require a pull request before merging
+  - Required approvals: 0
+  - Require review from Code Owners
+- Require status checks to pass:
+  - `gate`, with the source set to the groupproject App
+  - `screen`, with the source set to the groupproject App
+- Block force pushes
+- Restrict deletions
+- Bypass list: the owner (keegandonley) **only**. Don't add the App. GitHub then enforces `gate` and `screen` on the curator's own merges, so it can only merge PRs that passed both.
+
+## 7. Labels
+
+Create these labels (Issues > Labels > New label):
+
+- `needs-look`
+- `no-disclosure`
+- `rule:nsfw-hate-harassment`
+- `rule:ads-crypto-tracking`
+- `rule:political-campaigning`
+- `rule:real-person`
+- `rule:prompt-injection`
+- `wanted`
+- `stale`
+
+## 8. Live spikes before launch
+
+Record each result. If one fails, change the design before launch.
+
+From the spec:
+
+1. (spec 1) Can Worker Previews use the zone apex `groupproject.dev`? If not, change the preview route in `wrangler.jsonc` to `previews.groupproject.dev`.
+2. (spec 2) Does `wrangler preview` deploy an assets-only Worker? The wrangler 4.147.0 source resolves an assets-only entry for `preview`, but this hasn't been run live. If it fails, add a minimal Worker script, or fall back to a wildcard route and router Worker serving `pr-<n>/` from R2.
+3. (spec 3) Does the preview cap count live previews only, and does deleting one free a slot?
+4. (spec 4) Can the ruleset require `gate` and `screen` from the App with only the owner on the bypass list? Test it with a second account (and spike 18).
+5. (from the original spec; no longer listed) Is `workflow_run.pull_requests` populated for fork PRs? The gate looks the PR up by head SHA and head repo either way.
+6. (spec 6) Is public-repo artifact storage billed?
+7. (spec 7) What are the exact labels of the fork-PR approval options in repo settings?
+
+Not verifiable without live accounts:
+
+8. `wrangler preview --json` puts the preview URLs in `.preview.urls` (seen in wrangler's source). Check whether the list holds the `pr-<n>.groupproject.dev` URL, a workers.dev URL, or both. The comment script prefers the `*.groupproject.dev` one.
+9. `wrangler preview delete` for a PR that never got a preview (it failed the gate) probably fails the cleanup run. Decide whether that noise is acceptable.
+10. (spec 2) The previews block in `wrangler.jsonc` is empty. wrangler refuses to run `preview` without one; check that an empty block is accepted live.
+11. The preview `_headers` file (`scripts/ci/preview-headers.mjs`) sets `X-Robots-Tag: noindex` and a `Content-Security-Policy` header. Check both on a preview response, and check that a page still renders with the header CSP and SvelteKit's `<meta>` CSP both applied. Production gets the same CSP header without noindex: the deploy job runs `preview-headers.mjs build --production` over the built site just before `wrangler deploy`, replacing any `_headers` and deleting any `_redirects` the build shipped (previews get the same treatment). The CSP allows Google Fonts (`fonts.googleapis.com` styles, `fonts.gstatic.com` fonts), as `kit.csp` does; scripts and connections stay self-only. The `<meta>` CSP alone isn't enough, because a merged PR controls the build output (`vite.config.ts`, `src/app.html`, `static/_headers`). Check the header on a production response too.
+12. The workflows' sparse checkouts (no cone mode) should leave only the listed protected paths on disk. Check with an `ls -la` in a test run. These sparse checkouts are load-bearing: they keep contributor-controlled files (`.npmrc`, `.env*`, `.claude/`, `.mcp.json`, `CLAUDE.md`, `package.json`) off disk in every job that holds secrets, because those paths aren't protected. Don't widen them to a full or cone-mode checkout. Any workflow edit fails `workflows_match_reviewed_snapshot` until it is re-reviewed against the checklist in section 9.
+13. (spec 5) The curator on a `schedule` event, run once with a test PR that asks the curator to leak secrets. Record that:
+    - claude-code-action's human-actor check passes on `schedule`;
+    - the `curator-guard.mjs` hook runs (blocked calls show its message);
+    - a Read of `/proc/self/environ` is refused;
+    - `gh pr comment <n> --body-file /proc/self/environ` and `gh pr comment <n> --body "$GH_TOKEN"` are refused;
+    - `env`, `cat` and `gh pr view <n> --jq '$ENV.GH_TOKEN'` are refused;
+    - `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB` reached Claude Code (the job-level env should cover the composite action);
+    - the screenshot PNGs listed in the prompt can be Read.
+
+    GH_TOKEN stays in the environment of the gh commands Claude runs; the hook is what stops Claude printing it. The hook command ends in `|| exit 2`, so a guard that can't start still blocks. Claude Code doesn't block on a hook that times out, so check that the guard answers quickly. If any check fails, don't launch the curator.
+14. `actions/create-github-app-token@v3` marks `app-id` as deprecated in favour of `client-id`. It still works; switch to the App's Client ID if the warning matters.
+15. The App can create a check run on a fork PR's head SHA.
+16. The API token's permissions are enough for `wrangler deploy` to attach the `groupproject.lol` Custom Domain and for `wrangler preview` to use the `groupproject.dev` preview route.
+17. Production has no `404.html`, so unknown paths return an empty 404 (`not_found_handling` is left at its default).
+18. (spec 4) Recorded live check of the ruleset with the App off the bypass list. Record both results:
+    - The App merges a clean PR (App `gate` and `screen` success, no protected paths) with `gh pr merge <n> --squash --match-head-commit <sha>`: the merge succeeds without any bypass.
+    - The App tries to merge a PR whose `gate` failed, and a PR that touches a protected path: GitHub refuses both.
+
+    If the clean merge is refused, don't put the App back on the bypass list. Ask the owner first.
+19. `gh pr merge --squash` without `--subject` or `--body` uses the repo's squash default message ("Pull request title and description"). Check one curator merge's commit message, because the History page parses it.
+20. (spec 8) Jev's accuracy. Before launch, from `screener/`:
+    - Run `TYPESAFE_API_KEY=… node eval/run.mjs`. It sends the 40 labelled cases in `screener/eval/cases/` to Jev and prints the outcome confusion, per-flag confusion and a per-flag threshold sweep. `--cached` reuses `eval/results.json` without calling Jev again.
+    - From that output, tune `CLOSE_AT` (now 0.9) and `LOOK_AT` (now 0.35) in `screener/src/policy.ts`.
+    - Re-run the eval after any change to `screener/src/questions.ts`.
+
+## 9. Workflow security checklist
+
+`scripts/ci/test/workflows.snapshot.json` pins the sha256 of every file in `.github/workflows/`, of `wrangler.jsonc`, and of every `scripts/ci/*.mjs` (not the tests), because secret jobs run or read them. Any change fails the test `workflows_match_reviewed_snapshot`. Before you update the snapshot, check the changed workflow against this list:
+
+1. **No PR code in a job that holds secrets.** A job that references `secrets.`, mints an App token, or runs on `workflow_run` or `pull_request_target` never checks out a PR ref, never runs `npm`, `npx` (other than the pinned wrangler) or a contributor script, and runs only `node scripts/ci/*.mjs`, the pinned `npx --yes wrangler@<version>`, and plain `mv` of a validated directory. A `pull_request_target` workflow has no checkout at all.
+2. **No untrusted `${{ }}` where a shell or the runner acts on it.** PR-controlled fields (titles, bodies, branch names, commit messages, labels, step outputs that carry them) never appear in `run`, `shell`, `working-directory`, or an `env` *name*. They reach scripts only as `env` values. No `NODE_OPTIONS`, `PATH`, `LD_PRELOAD` or similar from any source.
+3. **Sparse checkout with `persist-credentials: false`** in every job with secrets: non-cone mode, protected paths only, no `ref` or `repository` input.
+4. **No workflow-level `env:` or `defaults:` that hold secrets** or set the shell or working directory. Secrets go on the step that needs them.
+5. **Pinned actions only:** first-party `actions/*` at a major version tag, third-party actions at a full commit SHA. No local (`./`) actions, no `actions/github-script`, no reusable workflows with `secrets: inherit`.
+6. **Least-privilege tokens:** `permissions:` set at the workflow level, and every `create-github-app-token` step lists its `permission-*` inputs. Only the gate writes checks.
+7. **No PR-controlled values in runner files.** Scripts never write PR-controlled values to `GITHUB_ENV`/`GITHUB_PATH`; multi-line `GITHUB_OUTPUT` uses a random delimiter.
+8. **Config read by tools in secret jobs gets the same review.** `wrangler.jsonc` is read by wrangler in the gate-preview and deploy jobs; it must never gain a `build` command.
+
+Then regenerate the snapshot (the sha256 of each file, as in the test) and record in the PR who reviewed it.

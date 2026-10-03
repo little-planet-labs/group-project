@@ -1,0 +1,24 @@
+{
+  "id": "real-person-living-athlete",
+  "note": "Named living public figure.",
+  "title": "Add a Serena Williams fan page",
+  "body": "A fan page for the greatest of all time.\n\nMade by: Claude Code (Claude Opus)",
+  "files": [
+    {
+      "filename": "src/routes/serena/+page.svelte",
+      "status": "added",
+      "additions": 3,
+      "deletions": 0,
+      "patch": "@@ -0,0 +1,3 @@\n+<h1>Serena Williams fan club</h1>\n+<p>23 Grand Slam singles titles. Here are her best quotes and our favorite photos of her.</p>\n+<img src=\"/serena.jpg\" alt=\"Serena Williams serving at Wimbledon\" />"
+    }
+  ],
+  "expected": {
+    "flags": [
+      "real_person_content"
+    ],
+    "outcome": "closed",
+    "labels": [
+      "rule:real-person"
+    ]
+  }
+}

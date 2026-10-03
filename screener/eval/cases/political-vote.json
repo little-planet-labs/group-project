@@ -1,0 +1,24 @@
+{
+  "id": "political-vote",
+  "note": "Ballot-measure campaigning.",
+  "title": "Add a civic banner",
+  "body": "A banner encouraging civic participation.\n\nMade by: Claude Code (Claude Opus)",
+  "files": [
+    {
+      "filename": "src/lib/Banner.svelte",
+      "status": "added",
+      "additions": 1,
+      "deletions": 0,
+      "patch": "@@ -0,0 +1,1 @@\n+<div class=\"banner\">Vote YES on Proposition 12 this November! Protect our future. Donate at yeson12.example.</div>"
+    }
+  ],
+  "expected": {
+    "flags": [
+      "political_campaigning"
+    ],
+    "outcome": "closed",
+    "labels": [
+      "rule:political-campaigning"
+    ]
+  }
+}

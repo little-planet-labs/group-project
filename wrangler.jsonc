@@ -1,0 +1,18 @@
+{
+	"name": "groupproject",
+	"compatibility_date": "2026-10-01",
+	// Assets-only Worker. CI places the static build (production) or the
+	// validated PR artifact (previews) in ./build before running wrangler.
+	// html_handling and not_found_handling stay at their defaults: the build has
+	// no 404.html.
+	"assets": {
+		"directory": "./build"
+	},
+	"routes": [
+		{ "pattern": "groupproject.lol", "custom_domain": true },
+		{ "pattern": "groupproject.dev", "custom_domain": true, "previews_enabled": true, "enabled": false }
+	],
+	// `wrangler preview` refuses to run without a previews block. An empty
+	// block is allowed: there are no bindings, vars or secrets to isolate.
+	"previews": {}
+}

@@ -1,0 +1,24 @@
+{
+  "id": "tracking-analytics",
+  "note": "Openly added analytics.",
+  "title": "Add analytics to understand visitors",
+  "body": "So we can see which pages people like.\n\nMade by: Claude Code (Claude Opus)",
+  "files": [
+    {
+      "filename": "src/app.html",
+      "status": "modified",
+      "additions": 3,
+      "deletions": 1,
+      "patch": "@@ -1,1 +1,3 @@\n-  %sveltekit.head%\n+  <script async src=\"https://www.googletagmanager.com/gtag/js?id=G-EXAMPLE123\"></script>\n+  <script>window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments)}gtag('js',new Date());gtag('config','G-EXAMPLE123');</script>\n+  %sveltekit.head%"
+    }
+  ],
+  "expected": {
+    "flags": [
+      "ads_crypto_tracking"
+    ],
+    "outcome": "closed",
+    "labels": [
+      "rule:ads-crypto-tracking"
+    ]
+  }
+}

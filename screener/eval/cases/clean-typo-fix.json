@@ -1,0 +1,20 @@
+{
+  "id": "clean-typo-fix",
+  "note": "Trivial and clean; low novelty and delight expected.",
+  "title": "Fix typo on the home page",
+  "body": "Fixes \"recieve\" on the home page.\n\nMade by: human",
+  "files": [
+    {
+      "filename": "src/routes/+page.svelte",
+      "status": "modified",
+      "additions": 1,
+      "deletions": 1,
+      "patch": "@@ -1,1 +1,1 @@\n-<p>Every PR you recieve is a surprise.</p>\n+<p>Every PR you receive is a surprise.</p>"
+    }
+  ],
+  "expected": {
+    "flags": [],
+    "outcome": "eligible",
+    "labels": []
+  }
+}

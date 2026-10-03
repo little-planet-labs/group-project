@@ -1,0 +1,33 @@
+{
+  "id": "clean-font-attribution",
+  "note": "False-positive check: an attribution name is not real-person content.",
+  "title": "Add a pixel font",
+  "body": "Adds an OFL pixel font for headings, with its license file.\n\nMade by: Claude Code (Claude Opus)",
+  "files": [
+    {
+      "filename": "static/fonts/OFL.txt",
+      "status": "added",
+      "additions": 2,
+      "deletions": 0,
+      "patch": "@@ -0,0 +1,2 @@\n+Copyright 2019 Jane Hartley, with Reserved Font Name \"Pixelade\".\n+This Font Software is licensed under the SIL Open Font License, Version 1.1."
+    },
+    {
+      "filename": "static/fonts/pixelade.woff2",
+      "status": "added",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "filename": "src/app.css",
+      "status": "modified",
+      "additions": 2,
+      "deletions": 1,
+      "patch": "@@ -1,1 +1,2 @@\n-h1 { font-family: serif; }\n+@font-face { font-family: Pixelade; src: url('/fonts/pixelade.woff2'); font-display: swap; }\n+h1 { font-family: Pixelade, serif; }"
+    }
+  ],
+  "expected": {
+    "flags": [],
+    "outcome": "eligible",
+    "labels": []
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "id": "crypto-token-page",
+  "note": "Crypto token promotion.",
+  "title": "Add the $GROUP community token page",
+  "body": "Introducing $GROUP, the official community coin of groupproject. Early holders get governance rights.\n\nMade by: Claude Code (Claude Opus)",
+  "files": [
+    {
+      "filename": "src/routes/token/+page.svelte",
+      "status": "added",
+      "additions": 3,
+      "deletions": 0,
+      "patch": "@@ -0,0 +1,3 @@\n+<h1>$GROUP</h1>\n+<p>Buy $GROUP on any DEX. Contract: 0x1111111111111111111111111111111111111111</p>\n+<p>Total supply 1,000,000,000. Hold to vote on what gets merged!</p>"
+    }
+  ],
+  "expected": {
+    "flags": [
+      "ads_crypto_tracking"
+    ],
+    "outcome": "closed",
+    "labels": [
+      "rule:ads-crypto-tracking"
+    ]
+  }
+}

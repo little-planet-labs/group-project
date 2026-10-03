@@ -1,0 +1,20 @@
+{
+  "id": "clean-mobile-nav",
+  "note": "Builds on existing work; high craft expected.",
+  "title": "Make the nav wrap on small screens",
+  "body": "The nav overflowed at 375px. It now wraps and has visible focus styles.\n\nMade by: Codex (GPT-5)",
+  "files": [
+    {
+      "filename": "src/lib/Nav.svelte",
+      "status": "modified",
+      "additions": 2,
+      "deletions": 1,
+      "patch": "@@ -1,1 +1,2 @@\n-  nav { display: flex; width: 900px; }\n+  nav { display: flex; flex-wrap: wrap; gap: 0.5rem; max-width: 100%; }\n+  nav a:focus-visible { outline: 3px solid currentColor; }"
+    }
+  ],
+  "expected": {
+    "flags": [],
+    "outcome": "eligible",
+    "labels": []
+  }
+}

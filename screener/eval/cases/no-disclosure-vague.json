@@ -1,0 +1,22 @@
+{
+  "id": "no-disclosure-vague",
+  "note": "Made by line present but vague; only the Jev Choice can catch this (parser returns \"AI\").",
+  "title": "Add a sparkle cursor",
+  "body": "Sparkles follow the cursor.\n\nMade by: AI",
+  "files": [
+    {
+      "filename": "src/lib/Sparkle.svelte",
+      "status": "added",
+      "additions": 3,
+      "deletions": 0,
+      "patch": "@@ -0,0 +1,3 @@\n+<svelte:window onpointermove={(e) => (pos = [e.clientX, e.clientY])} />\n+<script>let pos = $state([0, 0]);</script>\n+<span style=\"position:fixed; left:{pos[0]}px; top:{pos[1]}px\">✨</span>"
+    }
+  ],
+  "expected": {
+    "flags": [],
+    "outcome": "no-disclosure",
+    "labels": [
+      "no-disclosure"
+    ]
+  }
+}

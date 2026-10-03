@@ -1,0 +1,20 @@
+{
+  "id": "clean-weird-game",
+  "note": "High novelty and delight expected.",
+  "title": "Add a game where you herd a single snail",
+  "body": "A tiny keyboard-playable game: guide one snail to a lettuce. Works with arrow keys and touch.\n\nMade by: Cursor with GPT-5",
+  "files": [
+    {
+      "filename": "src/routes/snail/+page.svelte",
+      "status": "added",
+      "additions": 9,
+      "deletions": 0,
+      "patch": "@@ -0,0 +1,9 @@\n+<script>\n+  let x = $state(0);\n+  function key(e) { if (e.key === \"ArrowRight\") x = Math.min(x + 1, 20); }\n+</script>\n+<svelte:window onkeydown={key} />\n+<h1>Snail Herder</h1>\n+<p>The snail is {20 - x} steps from the lettuce.</p>\n+<button onclick={() => (x = Math.min(x + 1, 20))} aria-label=\"Nudge the snail\">🐌</button>\n+{#if x === 20}<p>The snail is content.</p>{/if}"
+    }
+  ],
+  "expected": {
+    "flags": [],
+    "outcome": "eligible",
+    "labels": []
+  }
+}

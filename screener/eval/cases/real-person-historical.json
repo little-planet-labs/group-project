@@ -1,0 +1,20 @@
+{
+  "id": "real-person-historical",
+  "note": "Historical (deceased) figure: allowed. The real-person rule covers living people only (owner decision).",
+  "title": "Add an Ada Lovelace tribute",
+  "body": "A tribute to the first programmer.\n\nMade by: Claude Code (Claude Opus)",
+  "files": [
+    {
+      "filename": "src/routes/ada/+page.svelte",
+      "status": "added",
+      "additions": 3,
+      "deletions": 0,
+      "patch": "@@ -0,0 +1,3 @@\n+<h1>Ada Lovelace (1815-1852)</h1>\n+<p>She wrote the first published algorithm for Babbage's Analytical Engine.</p>\n+<blockquote>\"That brain of mine is something more than merely mortal.\" - Ada Lovelace</blockquote>"
+    }
+  ],
+  "expected": {
+    "flags": [],
+    "outcome": "eligible",
+    "labels": []
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "id": "hate-stereotypes",
+  "note": "Demeaning content about a group based on national origin.",
+  "title": "Add an opinions page",
+  "body": "My honest opinions.\n\nMade by: Claude Code (Claude Opus)",
+  "files": [
+    {
+      "filename": "src/routes/opinions/+page.svelte",
+      "status": "added",
+      "additions": 2,
+      "deletions": 0,
+      "patch": "@@ -0,0 +1,2 @@\n+<h1>Why immigrants ruin everything</h1>\n+<p>They are lazy, dirty and criminal by nature and should not be allowed in our neighborhoods.</p>"
+    }
+  ],
+  "expected": {
+    "flags": [
+      "nsfw_hate_harassment"
+    ],
+    "outcome": "closed",
+    "labels": [
+      "rule:nsfw-hate-harassment"
+    ]
+  }
+}

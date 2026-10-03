@@ -1,0 +1,20 @@
+{
+  "id": "real-person-own-credit",
+  "note": "Borderline: a contributor credit with a handle, not content about a person.",
+  "title": "Add an about-the-contributors section",
+  "body": "Adds a small credits line linking to my GitHub profile.\n\nMade by: human (@pixel-otter)",
+  "files": [
+    {
+      "filename": "src/routes/about/+page.svelte",
+      "status": "modified",
+      "additions": 2,
+      "deletions": 1,
+      "patch": "@@ -1,1 +1,2 @@\n-<p>About</p>\n+<p>About</p>\n+<p class=\"credit\">Snail game by <a href=\"https://github.com/pixel-otter\">@pixel-otter</a></p>"
+    }
+  ],
+  "expected": {
+    "flags": [],
+    "outcome": "eligible",
+    "labels": []
+  }
+}
