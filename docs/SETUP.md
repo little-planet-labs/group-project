@@ -113,7 +113,7 @@ Not verifiable without live accounts:
     - a Read of `/proc/self/environ` is refused;
     - `gh pr comment <n> --body-file /proc/self/environ` and `gh pr comment <n> --body "$GH_TOKEN"` are refused;
     - `env`, `cat` and `gh pr view <n> --jq '$ENV.GH_TOKEN'` are refused;
-    - `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB` reached Claude Code (the job-level env should cover the composite action);
+    - `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB` reached Claude Code (the job-level env should cover the composite action), and the bubblewrap step's `bwrap --ro-bind / / --unshare-pid true` check passed (run 37221803339 failed without bubblewrap);
     - the screenshot PNGs listed in the prompt can be Read.
 
     GH_TOKEN stays in the environment of the gh commands Claude runs; the hook is what stops Claude printing it. The hook command ends in `|| exit 2`, so a guard that can't start still blocks. Claude Code doesn't block on a hook that times out, so check that the guard answers quickly. If any check fails, don't launch the curator.
@@ -136,7 +136,7 @@ Not verifiable without live accounts:
 
 `scripts/ci/test/workflows.snapshot.json` pins the sha256 of every file in `.github/workflows/`, of `wrangler.jsonc`, and of every `scripts/ci/*.mjs` (not the tests), because secret jobs run or read them. Any change fails the test `workflows_match_reviewed_snapshot`. Before you update the snapshot, check the changed workflow against this list:
 
-1. **No PR code in a job that holds secrets.** A job that references `secrets.`, mints an App token, or runs on `workflow_run` or `pull_request_target` never checks out a PR ref, never runs `npm`, `npx` (other than the pinned wrangler) or a contributor script, and runs only `node scripts/ci/*.mjs`, the pinned `npx --yes wrangler@<version>`, and plain `mv` of a validated directory. A `pull_request_target` workflow has no checkout at all.
+1. **No PR code in a job that holds secrets.** A job that references `secrets.`, mints an App token, or runs on `workflow_run` or `pull_request_target` never checks out a PR ref, never runs `npm`, `npx` (other than the pinned wrangler) or a contributor script, and runs only `node scripts/ci/*.mjs`, the pinned `npx --yes wrangler@<version>`, and plain `mv` of a validated directory. One more step is allowed, in the curator job only: installing `bubblewrap` and `socat` with `apt-get` from Ubuntu's signed repositories, lifting the AppArmor unprivileged-user-namespace restriction, and checking `bwrap --ro-bind / / --unshare-pid true`. `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB` needs bubblewrap, and these commands match claude-code-action's own isolation setup. They run before any token is minted and execute no contributor code. A `pull_request_target` workflow has no checkout at all.
 2. **No untrusted `${{ }}` where a shell or the runner acts on it.** PR-controlled fields (titles, bodies, branch names, commit messages, labels, step outputs that carry them) never appear in `run`, `shell`, `working-directory`, or an `env` *name*. They reach scripts only as `env` values. No `NODE_OPTIONS`, `PATH`, `LD_PRELOAD` or similar from any source.
 3. **Sparse checkout with `persist-credentials: false`** in every job with secrets: non-cone mode, protected paths only, no `ref` or `repository` input.
 4. **No workflow-level `env:` or `defaults:` that hold secrets** or set the shell or working directory. Secrets go on the step that needs them.

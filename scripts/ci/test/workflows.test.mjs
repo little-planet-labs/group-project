@@ -68,6 +68,21 @@ test('gate_preview_comment_reads_wrangler_output_file', () => {
 	assert.ok(gate.indexOf('WRANGLER_OUTPUT_FILE_PATH') < gate.indexOf('preview-comment.mjs'));
 });
 
+test('curator_installs_bubblewrap_before_tokens_and_action', () => {
+	// The env scrub needs bubblewrap; the install runs before any token exists.
+	const curator = read(`${WORKFLOWS}/curator.yml`);
+	const install = curator.indexOf(`      - run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends bubblewrap socat
+          [ ! -f /proc/sys/kernel/apparmor_restrict_unprivileged_userns ] || sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          bwrap --ro-bind / / --unshare-pid true
+`);
+	const firstToken = curator.indexOf('uses: actions/create-github-app-token@');
+	const action = curator.indexOf('uses: anthropics/claude-code-action@');
+	assert.ok(install > 0 && install < firstToken && firstToken < action, `${install} < ${firstToken} < ${action}`);
+	assert.equal(curator.match(/apt-get install/g).length, 1);
+});
+
 test('workflows_never_interpolate_untrusted_fields_in_run', () => {
 	// Any expression anywhere in the raw text that names a PR-controlled field
 	// must be the gate-preview concurrency group, which never reaches a shell.
@@ -150,4 +165,6 @@ test('curator_allowlist_is_exact', () => {
 	);
 	assert.match(curator, /"permissions": \{ "blockReadsOutsideWorkingDirectories": true \}/);
 	assert.match(curator, /^ {6}CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: '1'$/m);
+	assert.equal(code.match(/CLAUDE_CODE_SUBPROCESS_ENV_SCRUB/g).length, 1); // set once, outside comments
+	assert.doesNotMatch(curator, /CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: '?0/);
 });

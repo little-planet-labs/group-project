@@ -43,6 +43,17 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 24
+      # CLAUDE_CODE_SUBPROCESS_ENV_SCRUB needs bubblewrap. This mirrors
+      # claude-code-action v1.0.240's own isolation setup (action.yml, "Install
+      # subprocess isolation dependencies"): Ubuntu packages, plus lifting
+      # Ubuntu 24.04's AppArmor block on unprivileged user namespaces, which bwrap
+      # uses. The last line fails fast if bwrap can't create a PID namespace. It
+      # runs before any token is minted and touches no contributor code.
+      - run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends bubblewrap socat
+          [ ! -f /proc/sys/kernel/apparmor_restrict_unprivileged_userns ] || sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          bwrap --ro-bind / / --unshare-pid true
       - id: shortlist-token
         uses: actions/create-github-app-token@v3
         with:
