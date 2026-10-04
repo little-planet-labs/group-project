@@ -60,6 +60,14 @@ test('deploy_writes_csp_header_before_wrangler_deploy', () => {
 	assert.doesNotMatch(job, /\bnpm\s/);
 });
 
+test('gate_preview_comment_reads_wrangler_output_file', () => {
+	// The comment step reads the ND-JSON file the preview step tells wrangler to write.
+	const gate = read(`${WORKFLOWS}/gate-preview.yml`);
+	assert.ok(gate.includes('          WRANGLER_OUTPUT_FILE_PATH: ${{ runner.temp }}/wrangler-output.ndjson\n'));
+	assert.ok(gate.includes('        run: node scripts/ci/preview-comment.mjs "$RUNNER_TEMP/wrangler-output.ndjson"\n'));
+	assert.ok(gate.indexOf('WRANGLER_OUTPUT_FILE_PATH') < gate.indexOf('preview-comment.mjs'));
+});
+
 test('workflows_never_interpolate_untrusted_fields_in_run', () => {
 	// Any expression anywhere in the raw text that names a PR-controlled field
 	// must be the gate-preview concurrency group, which never reaches a shell.

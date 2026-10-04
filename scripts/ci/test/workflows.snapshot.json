@@ -1,7 +1,7 @@
 {
 	".github/workflows/curator.yml": "7c88233e1129e72ad17768fadc05a8b87d6e7bbae019db038cc10359ace166b4",
 	".github/workflows/deploy.yml": "9fac27bdf12a3660ecca773fc197a3873d7d19f5593879ed754aab0919720ba3",
-	".github/workflows/gate-preview.yml": "2e2d572ba97b2e08caf5dfeeb9db9ddf97fe391b18d6c650e8050880d32e1203",
+	".github/workflows/gate-preview.yml": "2c42d6f5daebc4dc8bc1040f00111add46f3bbe08b02acd61cb44a2cce1d9945",
 	".github/workflows/pr-build.yml": "344a1cc8aedb5c7b1f19a194c2a134fab338cdfa9228c48d02e6685ee54f9c94",
 	".github/workflows/preview-cleanup.yml": "3be3abfe151189982ff1bf56cb79fe086d1b49f8633f4cfa590b300c409ba804",
 	"scripts/ci/curator-guard.mjs": "b4adbccc387574cf627ed56795555713f24d792b7995f2c31423be44022bd512",
@@ -10,7 +10,7 @@
 	"scripts/ci/fetch-history.mjs": "b1d77cf8e1f0cf27abe602ed2fc21c209bd820374f5f08ef75e2bb1dcd6e798c",
 	"scripts/ci/gate.mjs": "219cc82280ab0c5424ddc7befc191a30de4a73f4178a25ad0d8451432602e822",
 	"scripts/ci/github.mjs": "5e0a4f40d4f25388a5ce4dd70ce3865aa8bd953229fa13bb81fa70e9e64e9b1d",
-	"scripts/ci/preview-comment.mjs": "a53bc776473d414b9fcfa4aa82a985ce4b48c43e0bd199e568b80d149a842c3f",
+	"scripts/ci/preview-comment.mjs": "30db00f8e86bdb4f70e6702f840ea8b473173387c94a3f8cae2d62b51f51224c",
 	"scripts/ci/preview-headers.mjs": "a49da303fd47a54161c7d9fb8cd41342bc7c163de8094e525d4e4987d9ad5dde",
 	"scripts/ci/resolve-pr.mjs": "e411876429c4024af0fb4c977b0818f939e5d9b624cf008692081df1e5b718e4",
 	"scripts/ci/screenshots.mjs": "e77787ae60cf64aaf3ac502ab192ddd161803b20e2df88b1fbd23bcac0c659b4",
