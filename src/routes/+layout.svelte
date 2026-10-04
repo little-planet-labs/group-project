@@ -7,7 +7,7 @@
 
 	const links = [
 		{ href: '/', label: 'Home' },
-		{ href: '/history', label: 'History' }
+		{ href: 'https://history.groupproject.lol/', label: 'History' }
 	];
 </script>
 

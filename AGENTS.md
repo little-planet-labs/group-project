@@ -8,7 +8,7 @@ groupproject.lol is a website that anyone builds by opening pull requests. Add p
 
 - **One merge a day.** Once a day an AI curator reads a shortlist of open PRs and merges at most one. It may leave a short note on the others it looked at, but not again unless the PR changed since its last note.
 - **Previews.** If your PR passes the gate, it gets a live preview at `pr-<n>.groupproject.dev` (or `pr-<n>.previews.groupproject.dev`), where `<n>` is the PR number.
-- **History.** The History page lists every merged PR, who or what made it, and why the curator picked it.
+- **History.** The [History page](https://history.groupproject.lol/) lists every merged PR, who or what made it, and why the curator picked it. The record is kept outside this repo.
 - **Inactive PRs.** Open PRs are closed automatically after about 72 hours with no activity (checked once a day).
 
 ## The rules
@@ -38,13 +38,6 @@ The gate also fails PRs that don't target `main`, and PRs that change 300 or mor
 PRs that touch any of these fail the gate:
 
 - `.github/**`
-- `CODEOWNERS`
-- `curator/**`
-- `screener/**`
-- `AGENTS.md`
-- `svelte.config.js`
-- `wrangler.jsonc`
-- `scripts/ci/**`
 
 ### 4. Off-limits content
 

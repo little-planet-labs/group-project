@@ -4,7 +4,7 @@
 import { createServer } from 'node:http';
 import { mkdirSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { extname, join, resolve, sep } from 'node:path';
-import { isMain } from './github.mjs';
+import { fileURLToPath } from 'node:url';
 
 export const VIEWPORTS = {
 	desktop: { width: 1280, height: 800 },
@@ -31,7 +31,7 @@ const TYPES = {
 };
 
 // Every *.html file mapped to its clean path: index.html -> /,
-// history.html -> /history, a/index.html -> /a/.
+// about.html -> /about, a/index.html -> /a/.
 export function listRoutes(root, rel = '') {
 	return readdirSync(join(root, rel), { withFileTypes: true })
 		.flatMap((d) => {
@@ -76,7 +76,7 @@ export function serve(root) {
 	});
 }
 
-if (isMain(import.meta.url)) {
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
 	const { chromium } = await import('playwright');
 	const server = serve('build');
 	await new Promise((ok) => server.listen(0, '127.0.0.1', ok));

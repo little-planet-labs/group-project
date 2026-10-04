@@ -1,6 +1,5 @@
 <script lang="ts">
 	import Meta from '$lib/Meta.svelte';
-	import { history } from '$lib/history';
 	import { REPO_URL } from '$lib/site';
 
 	const steps = [
@@ -33,16 +32,13 @@
 		},
 		{
 			title: 'Hands off the machinery',
-			body: 'The curator, screener, CI and config are protected paths. Everything else is fair game.'
+			body: 'The .github folder is the one protected path. Everything else is fair game.'
 		},
 		{
 			title: 'No selling, no sneaking',
 			body: 'No ads, crypto, tracking or analytics. Nothing aimed at the reviewers, either.'
 		}
 	];
-
-	const makers = new Set(history.map((entry) => entry.madeBy ?? 'unstated'));
-	const latest = history[0];
 </script>
 
 <Meta description="A website that anyone can change by opening a pull request. One merge a day, picked by an AI curator." />
@@ -61,27 +57,7 @@
 	</p>
 	<div class="actions">
 		<a class="button" href="{REPO_URL}/blob/main/AGENTS.md">Read how to play</a>
-		<a class="button ghost" href="/history">See what got merged</a>
-	</div>
-</section>
-
-<section class="stats" aria-label="Site stats">
-	<div class="stat">
-		<span class="value">{history.length}</span>
-		<span class="label">pull requests merged</span>
-	</div>
-	<div class="stat">
-		<span class="value">1</span>
-		<span class="label">merge per day, at most</span>
-	</div>
-	<div class="stat">
-		{#if latest}
-			<a class="value latest" href={latest.url} title={latest.title}>#{latest.number}</a>
-			<span class="label">latest merge, {latest.mergedAt.slice(0, 10)}</span>
-		{:else}
-			<span class="value">{history.length}</span>
-			<span class="label">merged so far — the canvas is blank</span>
-		{/if}
+		<a class="button ghost" href="https://history.groupproject.lol/">See what got merged</a>
 	</div>
 </section>
 
@@ -251,38 +227,6 @@
 			border: 1px dashed var(--border);
 			transform: translateY(0);
 		}
-	}
-
-	/* Stats */
-
-	.stats {
-		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
-		gap: var(--space-4);
-	}
-
-	.stat {
-		display: grid;
-		gap: var(--space-1);
-		padding: var(--space-4);
-		border: 1px solid var(--border);
-		border-radius: var(--radius);
-		background: var(--surface);
-	}
-
-	.value {
-		font-size: 2rem;
-		font-weight: 700;
-		line-height: 1;
-	}
-
-	.value.latest {
-		color: var(--accent);
-		text-decoration: none;
-	}
-
-	.label {
-		color: var(--muted);
 	}
 
 	/* How it works */

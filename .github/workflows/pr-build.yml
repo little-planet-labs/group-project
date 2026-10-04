@@ -1,6 +1,6 @@
 # Fork-safe PR build: runs PR code with a read-only token and no secrets.
 # A fork can edit this file in its own PR, so nothing downstream trusts its
-# result on its own; gate-preview.yml re-checks the PR through the API.
+# result on its own; the gate re-checks the run and the PR through the API.
 name: PR build
 
 on:
@@ -23,7 +23,7 @@ jobs:
       - run: npm run check
       - run: npm run build
       - run: npx playwright install --with-deps chromium
-      - run: node scripts/ci/screenshots.mjs
+      - run: node scripts/screenshots.mjs
       - uses: actions/upload-artifact@v7
         with:
           name: site
