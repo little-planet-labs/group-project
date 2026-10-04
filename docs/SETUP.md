@@ -39,15 +39,32 @@ The owner's checklist for wiring groupproject to GitHub and Cloudflare. Do it in
 
 ## 4. Actions secrets and variables
 
-In the repo (Settings > Secrets and variables > Actions), or at the org level scoped to this repo:
+Secrets live **only** in the `ci-secrets` environment, whose deployment branch policy allows `main` only. Anyone with write access can push a branch whose workflow reads repo-level or org-level secrets; environment secrets reach only jobs that name the environment *and* run with `GITHUB_REF` = `main`. Every job that uses a secret declares `environment: { name: ci-secrets, deployment: false }`.
 
-| Kind | Name | Value |
-|---|---|---|
-| Secret | `ANTHROPIC_API_KEY` | Anthropic API key for the curator |
-| Secret | `GP_APP_PRIVATE_KEY` | The App's `.pem`, pasted whole |
-| Secret | `CLOUDFLARE_API_TOKEN` | The token from step 1.5 |
-| Secret | `CLOUDFLARE_ACCOUNT_ID` | The account ID from step 1.6 |
-| Variable | `GP_APP_ID` | The App ID from step 3.5 |
+1. Settings > Environments > `ci-secrets`: deployment branches and tags = **Selected branches and tags**, rule `main` only. No other protection rules (a custom deployment protection rule would break `deployment: false`).
+2. Set the four secrets in the environment. Each command prompts for the value (the key file is read from stdin):
+
+   ```
+   gh secret set ANTHROPIC_API_KEY --env ci-secrets --repo little-planet-labs/group-project
+   gh secret set GP_APP_PRIVATE_KEY --env ci-secrets --repo little-planet-labs/group-project < app.pem
+   gh secret set CLOUDFLARE_API_TOKEN --env ci-secrets --repo little-planet-labs/group-project
+   gh secret set CLOUDFLARE_ACCOUNT_ID --env ci-secrets --repo little-planet-labs/group-project
+   ```
+
+3. Delete the repo-level copies, and make sure no org-level secret with these names is shared with this repo:
+
+   ```
+   gh secret delete ANTHROPIC_API_KEY --repo little-planet-labs/group-project
+   gh secret delete GP_APP_PRIVATE_KEY --repo little-planet-labs/group-project
+   gh secret delete CLOUDFLARE_API_TOKEN --repo little-planet-labs/group-project
+   gh secret delete CLOUDFLARE_ACCOUNT_ID --repo little-planet-labs/group-project
+   gh secret list --repo little-planet-labs/group-project
+   ```
+
+   The last command should list no secrets.
+4. Keep the one repo variable (it isn't secret): `gh variable set GP_APP_ID --body <App ID from step 3.5> --repo little-planet-labs/group-project`.
+5. **Limit repo write access to the owner.** Remove write, maintain and admin from every other account, including agent accounts such as `lpl-bot`. Agents and everyone else contribute from forks, like any outside contributor. Write access lets an account push a branch that runs arbitrary workflows, and add or change environments' branch rules if it is an admin.
+6. On GitHub Free, environment secrets work only in public repositories. While the repo is private, they need the org on GitHub Team (or later). Otherwise the secret jobs see empty secrets until the repo goes public.
 
 ## 5. Screener Worker secrets
 
@@ -131,6 +148,7 @@ Not verifiable without live accounts:
     - Run `TYPESAFE_API_KEY=… node eval/run.mjs`. It sends the 40 labelled cases in `screener/eval/cases/` to Jev and prints the outcome confusion, per-flag confusion and a per-flag threshold sweep. `--cached` reuses `eval/results.json` without calling Jev again.
     - From that output, tune `CLOSE_AT` (now 0.9) and `LOOK_AT` (now 0.35) in `screener/src/policy.ts`.
     - Re-run the eval after any change to `screener/src/questions.ts`.
+21. The `ci-secrets` environment: check that each secret job still gets its secrets on `main` (curator on `schedule` and `workflow_dispatch`, deploy on `push`, gate-preview on `workflow_run`, preview cleanup on `pull_request_target`), that no Deployment records appear (`deployment: false`), and that a `workflow_dispatch` of the curator from a non-`main` branch is refused before the job starts.
 
 ## 9. Workflow security checklist
 
@@ -144,5 +162,6 @@ Not verifiable without live accounts:
 6. **Least-privilege tokens:** `permissions:` set at the workflow level, and every `create-github-app-token` step lists its `permission-*` inputs. Only the gate writes checks.
 7. **No PR-controlled values in runner files.** Scripts never write PR-controlled values to `GITHUB_ENV`/`GITHUB_PATH`; multi-line `GITHUB_OUTPUT` uses a random delimiter.
 8. **Config read by tools in secret jobs gets the same review.** `wrangler.jsonc` is read by wrangler in the gate-preview and deploy jobs; it must never gain a `build` command.
+9. **Secrets live only in the main-only `ci-secrets` environment.** Every job that references `secrets.` declares `environment: { name: ci-secrets, deployment: false }`; no job that runs contributor code (npm, PR builds) declares it. No repo-level or org-level copies of the secrets exist (§4).
 
 Then regenerate the snapshot (the sha256 of each file, as in the test) and record in the PR who reviewed it.

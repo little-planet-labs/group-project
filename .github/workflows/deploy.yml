@@ -19,6 +19,9 @@ concurrency: deploy
 jobs:
   history:
     runs-on: ubuntu-latest
+    environment:
+      name: ci-secrets
+      deployment: false
     steps:
       - uses: actions/checkout@v7
         with:
@@ -72,6 +75,9 @@ jobs:
   deploy:
     needs: build
     runs-on: ubuntu-latest
+    environment:
+      name: ci-secrets
+      deployment: false
     steps:
       - uses: actions/checkout@v7
         with:

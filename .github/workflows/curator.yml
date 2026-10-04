@@ -29,6 +29,9 @@ concurrency: curator
 jobs:
   curate:
     runs-on: ubuntu-latest
+    environment:
+      name: ci-secrets
+      deployment: false
     env:
       CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: '1'
     steps:

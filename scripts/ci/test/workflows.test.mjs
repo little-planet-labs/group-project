@@ -83,6 +83,31 @@ test('curator_installs_bubblewrap_before_tokens_and_action', () => {
 	assert.equal(curator.match(/apt-get install/g).length, 1);
 });
 
+test('secret_jobs_use_ci_secrets_environment', () => {
+	// Raw text, split at the two-space job keys under `jobs:`.
+	const ENV = '    environment:\n      name: ci-secrets\n      deployment: false\n';
+	const secretJobs = [];
+	for (const path of workflowPaths) {
+		const jobs = read(path).split(/^jobs:\n/m)[1].split(/^(?=  [\w-]+:\n)/m);
+		for (const job of jobs) {
+			const name = `${path}:${job.match(/^  ([\w-]+):/)[1]}`;
+			if (/secrets\./.test(job)) {
+				secretJobs.push(name);
+				assert.ok(job.includes(ENV), `${name} uses secrets without the ci-secrets environment`);
+			}
+			if (/\bnpm\s|npx playwright/.test(job)) assert.doesNotMatch(job, /ci-secrets/, `${name} runs contributor code`);
+		}
+		assert.equal((read(path).match(/ci-secrets/g) ?? []).length, (read(path).match(/^ {4}environment:$/gm) ?? []).length, path);
+	}
+	assert.deepEqual(secretJobs.sort(), [
+		'.github/workflows/curator.yml:curate',
+		'.github/workflows/deploy.yml:deploy',
+		'.github/workflows/deploy.yml:history',
+		'.github/workflows/gate-preview.yml:gate',
+		'.github/workflows/preview-cleanup.yml:delete'
+	]);
+});
+
 test('workflows_never_interpolate_untrusted_fields_in_run', () => {
 	// Any expression anywhere in the raw text that names a PR-controlled field
 	// must be the gate-preview concurrency group, which never reaches a shell.
