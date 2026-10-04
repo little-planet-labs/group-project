@@ -1,5 +1,5 @@
 {
-	".github/workflows/curator.yml": "192533fae4824144d1b7be00320e31fa8e05ccfe05e90212bb8a4c2fc7306f13",
+	".github/workflows/curator.yml": "7c88233e1129e72ad17768fadc05a8b87d6e7bbae019db038cc10359ace166b4",
 	".github/workflows/deploy.yml": "9fac27bdf12a3660ecca773fc197a3873d7d19f5593879ed754aab0919720ba3",
 	".github/workflows/gate-preview.yml": "2e2d572ba97b2e08caf5dfeeb9db9ddf97fe391b18d6c650e8050880d32e1203",
 	".github/workflows/pr-build.yml": "344a1cc8aedb5c7b1f19a194c2a134fab338cdfa9228c48d02e6685ee54f9c94",

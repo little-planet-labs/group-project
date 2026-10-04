@@ -101,4 +101,5 @@ jobs:
             --add-dir ${{ runner.temp }}/screenshots
             --allowedTools "Read(./AGENTS.md),Read(/${{ runner.temp }}/screenshots/**),Bash(gh pr list:*),Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr comment:*),Bash(gh pr merge:*),Bash(gh pr close:*),Bash(gh issue create:*),Bash(gh issue list:*)"
             --disallowedTools "Bash(gh pr merge *--admin*),Bash(gh pr merge *--body-file*),Bash(gh pr merge *-F*),Bash(gh pr comment *--body-file*),Bash(gh pr comment *-F*),Bash(gh issue create *--body-file*),Bash(gh issue create *-F*)"
+            --model claude-opus-5-5
             --max-turns 40

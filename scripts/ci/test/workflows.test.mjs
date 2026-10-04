@@ -130,6 +130,7 @@ test('curator_allowlist_is_exact', () => {
 		'Bash(gh issue create *-F*)'
 	]);
 	assert.deepEqual(only('max-turns'), ['40']);
+	assert.deepEqual(only('model'), ['claude-opus-5-5']);
 	assert.doesNotMatch(curator, /gh run download/);
 	assert.match(curator, /^ {12}--add-dir \$\{\{ runner\.temp \}\}\/screenshots$/m);
 	// The guard hook runs on every tool call and fails closed if it can't start.
