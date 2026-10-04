@@ -4,6 +4,7 @@ import type { Env, PullRequestEvent } from '../src/screen.ts';
 export const REPO = 'octo/groupproject';
 export const NUMBER = 7;
 export const HEAD = 'a'.repeat(40);
+export const BASE = 'e'.repeat(40);
 export const INSTALLATION_TOKEN = 'ghs_secret_installation_token';
 export const WEBHOOK_SECRET = 'webhook-secret';
 
@@ -41,7 +42,12 @@ export function jevAnswers(o: JevOptions = {}): { a: Answers; b: Answers } {
 }
 
 export interface WorldOptions {
+  // What the compare API returns for <base>...HEAD: the certified commit's files. `files` is
+  // the answer for BASE (main); `compareFiles` overrides it per base SHA.
   files?: PullFile[];
+  compareFiles?: Record<string, PullFile[]>;
+  // What `pulls/:n/files` would return (the PR's head at read time). The screener must not use it.
+  pullFiles?: PullFile[];
   // The PR as GitHub reports it; defaults to the event()'s pull_request.
   pr?: Partial<PullRequestEvent['pull_request']>;
   // Runs before the nth (1-based) PR read returns, to change the PR mid-screening.
@@ -113,11 +119,13 @@ export function world(opts: WorldOptions = {}) {
       Object.assign(check, body);
       return json(check);
     }
-    if (route === `GET ${base}/pulls/${NUMBER}/files`) {
-      const page = Number(url.searchParams.get('page'));
-      const per = Number(url.searchParams.get('per_page'));
-      return json(files.slice((page - 1) * per, page * per));
+    const compare = url.pathname.match(new RegExp(`^${base}/compare/(\\w+)\\.\\.\\.(\\w+)$`));
+    if (req.method === 'GET' && compare && compare[2] === HEAD) {
+      // Like GitHub: files only on the first page, at most 300 for the whole comparison.
+      const listed = opts.compareFiles?.[compare[1]!] ?? (compare[1] === BASE ? files : []);
+      return json({ total_commits: 1, files: Number(url.searchParams.get('page') ?? 1) > 1 ? undefined : listed.slice(0, 300) });
     }
+    if (route === `GET ${base}/pulls/${NUMBER}/files`) return json(opts.pullFiles ?? [file('src/other-head.ts')]);
     if (route === `GET ${base}/pulls/${NUMBER}`) {
       opts.onPrGet?.(++prReads, pr);
       return json(structuredClone(pr));
@@ -164,7 +172,7 @@ export function event(overrides: Partial<PullRequestEvent> = {}, pr: Partial<Pul
   return {
     action: 'opened',
     installation: { id: 99 },
-    repository: { full_name: REPO },
+    repository: { full_name: REPO, default_branch: 'main' },
     ...overrides,
     pull_request: {
       number: NUMBER,
@@ -173,6 +181,7 @@ export function event(overrides: Partial<PullRequestEvent> = {}, pr: Partial<Pul
       title: 'Add a joke page',
       body: 'A page of jokes.\n\nMade by: Claude Code (Claude Opus)',
       head: { sha: HEAD },
+      base: { sha: BASE, ref: 'main' },
       labels: [],
       ...pr,
     },

@@ -1,6 +1,7 @@
 // Workflow safety is a reviewed state, not a parser: workflows.snapshot.json
-// pins the sha256 of every workflow file, of wrangler.jsonc and of every
-// scripts/ci/*.mjs (secret jobs run or read them), each reviewed against the
+// pins the sha256 of every workflow file, of wrangler.jsonc, of every
+// scripts/ci/*.mjs and of the pinned wrangler package (secret jobs run or read
+// them), each reviewed against the
 // security checklist in docs/SETUP.md. The other checks
 // here work on raw text and need no YAML parsing.
 import { test } from 'node:test';
@@ -13,6 +14,8 @@ const ROOT = join(import.meta.dirname, '../../..');
 const WORKFLOWS = '.github/workflows';
 const CI_INPUTS = [
 	'wrangler.jsonc',
+	'scripts/ci/wrangler/package.json',
+	'scripts/ci/wrangler/package-lock.json',
 	...readdirSync(join(ROOT, 'scripts/ci'))
 		.filter((f) => f.endsWith('.mjs'))
 		.map((f) => `scripts/ci/${f}`)
@@ -35,14 +38,42 @@ test('workflows_match_reviewed_snapshot', () => {
 	);
 });
 
+const WRANGLER = 'node scripts/ci/wrangler/node_modules/wrangler/bin/wrangler.js';
+const stripComments = (text) => text.replace(/^\s*#.*\n/gm, '');
+// Raw text split at the two-space job keys under `jobs:`.
+const jobsOf = (path) =>
+	read(path)
+		.split(/^jobs:\n/m)[1]
+		.split(/^(?=  [\w-]+:\n)/m)
+		.map((job) => ({ name: `${path}:${job.match(/^  ([\w-]+):/)[1]}`, text: job }));
+const WRANGLER_INSTALL = '      - run: npm ci --ignore-scripts --prefix scripts/ci/wrangler\n';
+
 test('workflows_with_secrets_never_checkout_or_run_pr_code', () => {
 	// Raw-text checks; the full review is the checklist plus the snapshot.
+	// The one pull_request_target workflow checks out only the default branch's
+	// pinned wrangler package: no ref, no repository, nothing else.
 	for (const path of workflowPaths) {
 		const text = read(path);
-		if (/pull_request_target/.test(text)) assert.doesNotMatch(text, /actions\/checkout/, path);
+		if (!/pull_request_target/.test(text)) continue;
+		assert.equal(path, `${WORKFLOWS}/preview-cleanup.yml`);
+		assert.equal(text.match(/actions\/checkout@/g).length, 1, path);
+		assert.ok(
+			text.includes(`      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: /scripts/ci/wrangler/
+      - uses: actions/setup-node@v7
+`),
+			path
+		);
+		assert.doesNotMatch(text, /^\s*(ref|repository):/m, path);
+		// Read-only token, enough for the sparse checkout and nothing else.
+		assert.ok(text.includes('\npermissions:\n  contents: read\n\njobs:'), path);
 	}
 	const gate = read(`${WORKFLOWS}/gate-preview.yml`);
-	assert.doesNotMatch(gate, /\bnpm\s/);
+	// The only npm command is the script-free install of the pinned wrangler.
+	assert.doesNotMatch(stripComments(gate).replace(WRANGLER_INSTALL, ''), /\bnpm\s|\bnpx\s/);
 	assert.doesNotMatch(gate, /^\s*ref:/m);
 	const prBuild = read(`${WORKFLOWS}/pr-build.yml`);
 	assert.doesNotMatch(prBuild, /\$\{\{[^}]*secrets|secrets:\s*inherit/);
@@ -54,10 +85,38 @@ test('deploy_writes_csp_header_before_wrangler_deploy', () => {
 	const job = read(`${WORKFLOWS}/deploy.yml`).split('\n  deploy:\n')[1];
 	const download = job.indexOf('          name: site\n          path: build\n');
 	const headers = job.indexOf('      - run: node scripts/ci/preview-headers.mjs build --production\n');
-	const deploy = job.indexOf('      - run: npx --yes wrangler@4.147.0 deploy\n');
+	const deploy = job.indexOf(`      - run: ${WRANGLER} deploy\n`);
 	assert.ok(download > 0 && headers > download && deploy > headers, `${download} < ${headers} < ${deploy}`);
 	assert.match(job, /sparse-checkout: \|\n {12}\/scripts\/ci\/\n {12}\/wrangler\.jsonc\n/);
-	assert.doesNotMatch(job, /\bnpm\s/);
+	assert.doesNotMatch(job.replace(WRANGLER_INSTALL, ''), /\bnpm\s|\bnpx\s/);
+});
+
+test('secret_steps_run_only_lockfile_pinned_wrangler', () => {
+	// The pinned package is exact, and every wrangler call uses its install.
+	const pkg = JSON.parse(read('scripts/ci/wrangler/package.json'));
+	assert.deepEqual(pkg.dependencies, { wrangler: '4.147.0' });
+	const lock = JSON.parse(read('scripts/ci/wrangler/package-lock.json'));
+	assert.equal(lock.packages['node_modules/wrangler'].version, '4.147.0');
+	assert.equal(lock.packages[''].dependencies.wrangler, '4.147.0');
+	const callers = [];
+	for (const path of workflowPaths) {
+		assert.doesNotMatch(read(path), /npx[^\n]*wrangler|\bwrangler@/, path);
+		for (const { name, text } of jobsOf(path)) {
+			if (!text.includes(WRANGLER)) continue;
+			callers.push(name);
+			// The job installs first, before any token or secret, in a step whose
+			// next line is another step (no env, so no secrets).
+			const install = text.indexOf(WRANGLER_INSTALL);
+			const firstSecret = text.search(/\bsecrets\.\w|create-github-app-token@/);
+			assert.ok(install > 0 && install < text.indexOf(WRANGLER) && install < firstSecret, `${name}: ${install}`);
+			assert.match(text.slice(install + WRANGLER_INSTALL.length), /^ {6}- /, name);
+		}
+	}
+	assert.deepEqual(callers.sort(), [
+		'.github/workflows/deploy.yml:deploy',
+		'.github/workflows/gate-preview.yml:gate',
+		'.github/workflows/preview-cleanup.yml:delete'
+	]);
 });
 
 test('gate_preview_comment_reads_wrangler_output_file', () => {
@@ -85,19 +144,28 @@ test('curator_installs_bubblewrap_before_tokens_and_action', () => {
 
 test('secret_jobs_use_ci_secrets_environment', () => {
 	// Raw text, split at the two-space job keys under `jobs:`.
-	const ENV = '    environment:\n      name: ci-secrets\n      deployment: false\n';
+	// No `deployment: false`: GitHub documents branch policies for environments
+	// with deployments; the main-only rule is the control.
+	// The block is exactly these two lines: nothing more indented follows.
+	const ENV = /^ {4}environment:\n {6}name: ci-secrets\n(?! {6})/m;
 	const secretJobs = [];
 	for (const path of workflowPaths) {
-		const jobs = read(path).split(/^jobs:\n/m)[1].split(/^(?=  [\w-]+:\n)/m);
-		for (const job of jobs) {
-			const name = `${path}:${job.match(/^  ([\w-]+):/)[1]}`;
-			if (/secrets\./.test(job)) {
+		for (const { name, text: job } of jobsOf(path)) {
+			if (/\bsecrets\.\w/.test(job)) {
 				secretJobs.push(name);
-				assert.ok(job.includes(ENV), `${name} uses secrets without the ci-secrets environment`);
+				assert.match(job, ENV, `${name} uses secrets without the ci-secrets environment`);
 			}
-			if (/\bnpm\s|npx playwright/.test(job)) assert.doesNotMatch(job, /ci-secrets/, `${name} runs contributor code`);
+			// Contributor code: the site's npm install/build and Playwright. The pinned,
+			// script-free `npm ci --ignore-scripts --prefix scripts/ci/wrangler` isn't.
+			const contributorCode = job
+				.replaceAll('npm ci --ignore-scripts --prefix scripts/ci/wrangler', '')
+				.match(/\bnpm\s|npx\s/);
+			if (contributorCode) assert.doesNotMatch(job, /ci-secrets/, `${name} runs contributor code`);
 		}
-		assert.equal((read(path).match(/ci-secrets/g) ?? []).length, (read(path).match(/^ {4}environment:$/gm) ?? []).length, path);
+		// Outside comments, `ci-secrets` appears only as an environment name.
+		const code = stripComments(read(path));
+		assert.equal((code.match(/ci-secrets/g) ?? []).length, (code.match(/^ {4}environment:$/gm) ?? []).length, path);
+		assert.doesNotMatch(read(path), /deployment:/, path);
 	}
 	assert.deepEqual(secretJobs.sort(), [
 		'.github/workflows/curator.yml:curate',
@@ -106,6 +174,18 @@ test('secret_jobs_use_ci_secrets_environment', () => {
 		'.github/workflows/gate-preview.yml:gate',
 		'.github/workflows/preview-cleanup.yml:delete'
 	]);
+});
+
+test('curator_removes_git_dir_before_action', () => {
+	// claude-code-action writes the App token into .git/config; with no .git the
+	// write fails. gh gets the repo from GH_REPO instead.
+	const curator = read(`${WORKFLOWS}/curator.yml`);
+	const checkout = curator.indexOf('uses: actions/checkout@');
+	const removal = curator.indexOf('      - run: rm -rf .git\n');
+	const firstToken = curator.indexOf('uses: actions/create-github-app-token@');
+	const action = curator.indexOf('uses: anthropics/claude-code-action@');
+	assert.ok(checkout < removal && removal < firstToken && firstToken < action, `${checkout} < ${removal} < ${firstToken} < ${action}`);
+	assert.match(curator, /^ {6}GH_REPO: \$\{\{ github\.repository \}\}$/m);
 });
 
 test('workflows_never_interpolate_untrusted_fields_in_run', () => {

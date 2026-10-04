@@ -92,16 +92,19 @@ export interface PullFile {
   patch?: string;
 }
 
-// GitHub returns at most 3000 files, 100 per page.
-export async function listPullFiles(gh: GitHub, repo: string, number: number): Promise<PullFile[]> {
-  const files: PullFile[] = [];
-  for (let page = 1; page <= 30; page++) {
-    const batch = await gh<PullFile[]>(
-      'GET',
-      `/repos/${repo}/pulls/${number}/files?per_page=100&page=${page}`,
-    );
-    files.push(...batch);
-    if (batch.length < 100) break;
+// The files changed by exactly `head` (an immutable SHA) since its merge base with `base`.
+// `pulls/:n/files` is not used: it follows whatever the PR's head is at read time.
+// GitHub's compare API lists files only on the first page and at most 300 for the whole
+// comparison, without saying whether it truncated, so a listing that reaches the limit fails.
+export const COMPARE_FILE_LIMIT = 300;
+
+export async function listCommitFiles(gh: GitHub, repo: string, base: string, head: string): Promise<PullFile[]> {
+  const { files = [] } = await gh<{ files?: PullFile[] }>(
+    'GET',
+    `/repos/${repo}/compare/${base}...${head}?per_page=1`,
+  );
+  if (files.length >= COMPARE_FILE_LIMIT) {
+    throw new Error(`compare listed ${files.length} files; the listing may be truncated`);
   }
   return files;
 }

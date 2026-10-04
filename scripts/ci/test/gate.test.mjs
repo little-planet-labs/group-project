@@ -1,13 +1,27 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { evaluateGate, runGate } from '../gate.mjs';
+import { COMPARE_FILE_CAP, evaluateGate, runGate } from '../gate.mjs';
 import { fakeGitHub } from './fake-github.mjs';
 
 const file = (filename, lines = 1, extra = {}) => ({ filename, additions: lines, deletions: 0, ...extra });
 const pass = (files) => evaluateGate({ files, buildConclusion: 'success' });
 
 const SHA = 'a'.repeat(40);
-const pr = (sha = SHA, changed_files = 1) => ({ json: { number: 7, head: { sha }, changed_files } });
+const BASE = 'b'.repeat(40);
+const OTHER = 'c'.repeat(40);
+// The PR record follows the moving head and a retargetable base; the gate
+// must rely on neither.
+const pr = (headSha = SHA, baseRef = 'main') => ({ json: { number: 7, head: { sha: headSha }, base: { ref: baseRef, sha: BASE } } });
+const MAIN = 'd'.repeat(40);
+const COMPARE = `GET /repos/o/r/compare/${MAIN}...${SHA}?per_page=1`;
+const routes = (extra) => ({
+	'GET /repos/o/r/pulls/7': pr(),
+	'GET /repos/o/r/git/ref/heads/main': { json: { ref: 'refs/heads/main', object: { type: 'commit', sha: MAIN } } },
+	'POST /repos/o/r/check-runs': { status: 201, json: {} },
+	...extra
+});
+const run = (gh) => runGate(gh, 'o/r', { number: 7, headSha: SHA, buildConclusion: 'success', defaultBranch: 'main' });
+const checkRun = (calls) => calls.find((c) => c.method === 'POST' && c.path === '/repos/o/r/check-runs').body;
 
 test('gate_rejects_protected_path_change', () => {
 	for (const path of [
@@ -54,55 +68,115 @@ test('gate_requires_successful_build', () => {
 	}
 });
 
-test('gate_paginates_file_list', async () => {
-	const page1 = Array.from({ length: 100 }, (_, i) => file(`src/f${i}.js`, 0));
-	const { gh, calls } = fakeGitHub({
-		'GET /repos/o/r/pulls/7': pr(SHA, 101),
-		'GET /repos/o/r/pulls/7/files?per_page=100': { json: page1, link: '/repos/o/r/pulls/7/files?per_page=100&page=2' },
-		'GET /repos/o/r/pulls/7/files?per_page=100&page=2': { json: [file('.github/workflows/evil.yml')] },
-		'POST /repos/o/r/check-runs': { status: 201, json: {} }
-	});
-	const result = await runGate(gh, 'o/r', { number: 7, headSha: SHA, buildConclusion: 'success' });
+test('gate_checks_files_of_the_certified_sha', async () => {
+	// H→C→H race: /pulls/7/files shows whatever the head is now (a clean C),
+	// while the certified SHA's own diff touches a protected path. And the reverse.
+	const dirty = fakeGitHub(
+		routes({
+			'GET /repos/o/r/pulls/7': pr(OTHER),
+			'GET /repos/o/r/pulls/7/files?per_page=100': { json: [file('src/clean.js')] },
+			[COMPARE]: { json: { files: [file('src/a.js'), file('.github/workflows/evil.yml')] } }
+		})
+	);
+	const result = await run(dirty.gh);
 	assert.equal(result.passed, false);
 	assert.match(result.reasons[0], /\.github\/workflows\/evil\.yml/);
-	const post = calls.find((c) => c.method === 'POST');
 	assert.deepEqual(
-		{ name: post.body.name, head_sha: post.body.head_sha, status: post.body.status, conclusion: post.body.conclusion },
-		{ name: 'gate', head_sha: SHA, status: 'completed', conclusion: 'failure' }
+		{ ...checkRun(dirty.calls), output: undefined },
+		{ name: 'gate', head_sha: SHA, status: 'completed', conclusion: 'failure', output: undefined }
+	);
+	assert.ok(!dirty.calls.some((c) => c.path.includes('/files')), 'the moving /pulls/files list is never read');
+
+	const clean = fakeGitHub(
+		routes({
+			'GET /repos/o/r/pulls/7/files?per_page=100': { json: [file('.github/workflows/evil.yml')] },
+			[COMPARE]: { json: { files: [file('src/a.js', 10)] } }
+		})
+	);
+	assert.equal((await run(clean.gh)).passed, true);
+	assert.equal(checkRun(clean.calls).conclusion, 'success');
+});
+
+test('gate_fails_closed_when_compare_list_is_capped_or_missing', async () => {
+	// The compare API lists at most 300 files, on one page; a protected file
+	// could sit past the cap, so a full list is never trusted.
+	assert.equal(COMPARE_FILE_CAP, 300);
+	const many = Array.from({ length: 300 }, (_, i) => file(`src/f${i}.js`, 0));
+	const capped = fakeGitHub(routes({ [COMPARE]: { json: { files: many } } }));
+	const result = await run(capped.gh);
+	assert.equal(result.passed, false);
+	assert.match(result.reasons.join(), /Couldn't list every changed file/);
+	assert.equal(checkRun(capped.calls).conclusion, 'failure');
+
+	const under = fakeGitHub(routes({ [COMPARE]: { json: { files: many.slice(1) } } }));
+	assert.equal((await run(under.gh)).passed, true);
+
+	const missing = fakeGitHub(routes({ [COMPARE]: { json: { status: 'diverged' } } }));
+	assert.equal((await run(missing.gh)).passed, false);
+});
+
+test('gate_rejects_non_default_base', async () => {
+	// The PR targets a branch that already holds the protected change, so its
+	// own base comparison would look clean; the gate still fails it.
+	const { gh, calls } = fakeGitHub(
+		routes({
+			'GET /repos/o/r/pulls/7': pr(SHA, 'sneaky'),
+			[`GET /repos/o/r/compare/${BASE}...${SHA}`]: { json: { files: [file('src/a.js')] } },
+			[`GET /repos/o/r/compare/sneaky...${SHA}?per_page=1`]: { json: { files: [file('src/a.js')] } },
+			[COMPARE]: { json: { files: [file('src/a.js')] } }
+		})
+	);
+	const result = await run(gh);
+	assert.equal(result.passed, false);
+	assert.match(result.reasons.join(), /must target main/);
+	assert.equal(checkRun(calls).conclusion, 'failure');
+	// The retargeted base is never what the files are compared against.
+	assert.deepEqual(
+		calls.filter((c) => c.path.includes('/compare/')).map((c) => c.path),
+		[`/repos/o/r/compare/${MAIN}...${SHA}?per_page=1`]
 	);
 });
 
-test('gate_posts_success_check_run_when_clean', async () => {
-	const { gh, calls } = fakeGitHub({
-		'GET /repos/o/r/pulls/7': pr(),
-		'GET /repos/o/r/pulls/7/files?per_page=100': { json: [file('src/a.js', 10)] },
-		'POST /repos/o/r/check-runs': { status: 201, json: {} }
-	});
-	const result = await runGate(gh, 'o/r', { number: 7, headSha: SHA, buildConclusion: 'success' });
-	assert.equal(result.passed, true);
-	assert.equal(calls.find((c) => c.method === 'POST').body.conclusion, 'success');
+test('gate_compares_from_default_branch', async () => {
+	// Only main...headSha (paged) is read; the PR's base SHA and branch are not.
+	const { gh, calls } = fakeGitHub(
+		routes({
+			[`GET /repos/o/r/compare/${BASE}...${SHA}`]: { json: { files: [file('src/a.js')] } },
+			[COMPARE]: { json: { files: [file('src/a.js'), file('AGENTS.md')] } }
+		})
+	);
+	const result = await run(gh);
+	assert.equal(result.passed, false);
+	assert.match(result.reasons[0], /AGENTS\.md/);
+	assert.deepEqual(
+		calls.filter((c) => c.path.includes('/compare/')).map((c) => c.path),
+		[`/repos/o/r/compare/${MAIN}...${SHA}?per_page=1`]
+	);
 });
 
-test('gate_fails_when_head_moves', async () => {
-	// The files endpoint reflects the current head, which is no longer the built SHA.
-	let n = 0;
-	const { gh, calls } = fakeGitHub({
-		'GET /repos/o/r/pulls/7': () => pr(n++ === 0 ? SHA : 'b'.repeat(40)),
-		'GET /repos/o/r/pulls/7/files?per_page=100': { json: [file('src/a.js')] },
-		'POST /repos/o/r/check-runs': { status: 201, json: {} }
-	});
-	const result = await runGate(gh, 'o/r', { number: 7, headSha: SHA, buildConclusion: 'success' });
+test('gate_resolves_default_branch_ref_to_sha', async () => {
+	// A tag named `main` pointing at the head would make compare/main...SHA empty.
+	// The gate compares from refs/heads/main's commit, which shows the change.
+	const { gh, calls } = fakeGitHub(
+		routes({
+			[`GET /repos/o/r/compare/main...${SHA}?per_page=1`]: { json: { files: [] } },
+			[COMPARE]: { json: { files: [file('scripts/ci/gate.mjs')] } }
+		})
+	);
+	const result = await run(gh);
 	assert.equal(result.passed, false);
-	assert.equal(calls.find((c) => c.method === 'POST').body.conclusion, 'failure');
-});
+	assert.match(result.reasons[0], /scripts\/ci\/gate\.mjs/);
+	const compares = calls.filter((c) => c.path.includes('/compare/')).map((c) => c.path);
+	assert.deepEqual(compares, [`/repos/o/r/compare/${MAIN}...${SHA}?per_page=1`]);
+	assert.ok(compares.every((p) => !p.includes('/compare/main')));
 
-test('gate_fails_closed_when_file_list_truncated', async () => {
-	const { gh } = fakeGitHub({
-		'GET /repos/o/r/pulls/7': pr(SHA, 3001),
-		'GET /repos/o/r/pulls/7/files?per_page=100': { json: [file('src/a.js')] },
-		'POST /repos/o/r/check-runs': { status: 201, json: {} }
-	});
-	const result = await runGate(gh, 'o/r', { number: 7, headSha: SHA, buildConclusion: 'success' });
-	assert.equal(result.passed, false);
-	assert.match(result.reasons.join(), /Listed 1 of 3001/);
+	// No branch commit to compare from: no gate check at all.
+	for (const object of [{ type: 'tag', sha: MAIN }, { type: 'commit' }, undefined]) {
+		const bad = fakeGitHub(routes({ 'GET /repos/o/r/git/ref/heads/main': { json: { object } }, [COMPARE]: { json: { files: [] } } }));
+		await assert.rejects(run(bad.gh), /not a commit/);
+		assert.ok(!bad.calls.some((c) => c.method === 'POST'));
+	}
+	const missing = fakeGitHub(routes({ 'GET /repos/o/r/git/ref/heads/main': undefined, [COMPARE]: { json: { files: [] } } }));
+	await assert.rejects(run(missing.gh), /404/);
+	assert.ok(!missing.calls.some((c) => c.method === 'POST'));
 });

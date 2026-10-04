@@ -1,0 +1,8 @@
+{
+	"name": "gp-ci-wrangler",
+	"private": true,
+	"description": "Pinned wrangler for CI jobs that hold secrets. Installed with npm ci --ignore-scripts.",
+	"dependencies": {
+		"wrangler": "4.147.0"
+	}
+}

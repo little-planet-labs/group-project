@@ -1,6 +1,6 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { NOTE_PR_CHANGED, screenPullRequest, type Env, type PullRequestEvent } from '../src/screen.ts';
-import { HEAD, INSTALLATION_TOKEN, REPO, NUMBER, env, event, file, world, type Check, type WorldOptions } from './helpers.ts';
+import { NOTE_NOT_DEFAULT_BASE, NOTE_PR_CHANGED, screenPullRequest, type Env, type PullRequestEvent } from '../src/screen.ts';
+import { BASE, HEAD, INSTALLATION_TOKEN, REPO, NUMBER, env, event, file, world, type Check, type WorldOptions } from './helpers.ts';
 
 let testEnv: Env;
 beforeAll(async () => {
@@ -81,14 +81,91 @@ describe('screening', () => {
     );
   });
 
-  it('lists_files_across_pages', async () => {
-    const files = Array.from({ length: 150 }, (_, i) => file(`src/f${i}.ts`, i < 120 ? 'modified' : 'added'));
-    const { w, report } = await run({ files });
-    const pages = w.github('GET', `/pulls/${NUMBER}/files`).map((c) => c.url.searchParams.get('page'));
-    expect(pages).toEqual(['1', '2']);
+  it('screens_files_of_the_certified_sha', async () => {
+    // pulls/:n/files would describe whatever the head is at read time (e.g. C during an
+    // H -> C -> H force-push cycle); the compare API describes exactly HEAD.
+    const { w, runs, report } = await run({
+      files: [file('src/certified.ts', 'modified', '@@ -1 +1 @@\n-a\n+CERTIFIED_CONTENT')],
+      pullFiles: [file('src/other.ts', 'added', '@@ -0,0 +1 @@\n+OTHER_HEAD_CONTENT')],
+    });
+    const compare = w.calls.filter((c) => c.url.pathname.includes('/compare/'));
+    expect(compare.map((c) => c.url.pathname)).toEqual([`/repos/${REPO}/compare/${BASE}...${HEAD}`]);
+    expect(w.github('GET', `/pulls/${NUMBER}/files`)).toHaveLength(0);
     const b = w.calls.find((c) => c.url.host === 'api.typesafe.ai' && 'injection' in c.body.questions)!;
-    expect(b.body.state.files).toHaveLength(150);
-    expect(report.existing_files_touched).toBe(120);
+    expect(b.body.state.files.map((f: { filename: string }) => f.filename)).toEqual(['src/certified.ts']);
+    expect(b.body.state.diff).toContain('CERTIFIED_CONTENT');
+    expect(b.body.state.diff).not.toContain('OTHER_HEAD_CONTENT');
+    expect(runs[0].head_sha).toBe(HEAD);
+    expect(report.existing_files_touched).toBe(1);
+  });
+
+  it('non_default_base_never_gets_a_verdict', async () => {
+    const featureBase = { ref: 'feature-b', sha: 'b'.repeat(40) };
+    // The event targets a non-default branch: clean content, but no verdict.
+    const { w, runs } = await run({}, event({}, { base: featureBase }));
+    expect(w.calls.filter((c) => c.url.pathname.includes('/compare/'))).toHaveLength(0);
+    expect(w.calls.filter((c) => c.url.host === 'api.typesafe.ai')).toHaveLength(0);
+    expect(w.prWrites()).toEqual([]);
+    expect(runs[0]).toMatchObject({ head_sha: HEAD, status: 'completed', conclusion: 'failure' });
+    expect(parse(runs[0]).outcome).toBe('error');
+    expect(runs[0].output.summary).toContain(NOTE_NOT_DEFAULT_BASE);
+
+    // The event targets main, but GitHub's record shows another base on one read only.
+    for (const read of [1, 2]) {
+      const moved = await run({
+        jev: { injection: 0.95 },
+        onPrGet: (n, pr) => {
+          pr.base = n === read ? featureBase : { ref: 'main', sha: BASE };
+        },
+      });
+      // A first-read mismatch stops before the files are listed or Jev is asked.
+      if (read === 1) expect(moved.w.calls.filter((c) => c.url.pathname.includes('/compare/'))).toHaveLength(0);
+      expect(moved.w.prWrites(), `read ${read}`).toEqual([]);
+      expect(moved.runs[0]!.conclusion, `read ${read}`).toBe('failure');
+      expect(parse(moved.runs[0]!).outcome, `read ${read}`).toBe('error');
+    }
+  });
+
+  it('compare_runs_from_default_branch', async () => {
+    // Branch B already holds banned content; H only adds a harmless change on top of B.
+    const featureBase = { ref: 'feature-b', sha: 'b'.repeat(40) };
+    const w = world({
+      pr: { base: featureBase },
+      compareFiles: {
+        [featureBase.sha]: [file('src/harmless.ts', 'added', '+HARMLESS_ONLY')],
+        [BASE]: [file('src/harmless.ts', 'added', '+HARMLESS_ONLY'), file('src/from-b.ts', 'added', '+BANNED_FROM_B')],
+      },
+    });
+    vi.stubGlobal('fetch', w.fetch);
+
+    await screenPullRequest(testEnv, event({}, { base: featureBase }));
+    expect(w.checkRuns()[0]!.conclusion).toBe('failure');
+
+    // The base is changed to main with the same head SHA: re-screened against main.
+    w.pr.base = { ref: 'main', sha: BASE };
+    await screenPullRequest(testEnv, event({ action: 'edited', changes: { base: { ref: { from: 'feature-b' } } } }, { base: { ref: 'main', sha: BASE } }));
+
+    const compares = w.calls.filter((c) => c.url.pathname.includes('/compare/')).map((c) => c.url.pathname);
+    expect(compares).toEqual([`/repos/${REPO}/compare/${BASE}...${HEAD}`]);
+    const b = w.calls.find((c) => c.url.host === 'api.typesafe.ai' && 'injection' in c.body.questions)!;
+    expect(b.body.state.diff).toContain('BANNED_FROM_B');
+    const [first, second] = w.checkRuns();
+    expect(second!.id).toBeGreaterThan(first!.id);
+    expect(second!.head_sha).toBe(HEAD);
+  });
+
+  it('compare_listing_at_github_limit_fails_closed', async () => {
+    quiet();
+    // 299 files are complete; 300 may be a truncated listing and must not pass as complete.
+    const complete = await run({ files: Array.from({ length: 299 }, (_, i) => file(`src/f${i}.ts`, i < 120 ? 'modified' : 'added')) });
+    expect(complete.report.outcome).toBe('eligible');
+    expect(complete.report.existing_files_touched).toBe(120);
+
+    const { w, runs, report } = await run({ files: Array.from({ length: 400 }, (_, i) => file(`src/f${i}.ts`)) });
+    expect(w.calls.filter((c) => c.url.host === 'api.typesafe.ai')).toHaveLength(0);
+    expect(w.prWrites()).toEqual([]);
+    expect(runs[0]).toMatchObject({ status: 'completed', conclusion: 'failure' });
+    expect(report.outcome).toBe('error');
   });
 
   it('policy_closes_on_injection_even_with_high_taste', async () => {
@@ -302,7 +379,7 @@ describe('screening', () => {
       const { w, runs } = await run({ onPrGet, jev }, event({ action: 'synchronize' }));
       expect(w.prWrites(), what).toEqual([]);
       // The record's head never chooses which files are judged.
-      expect(w.github('GET', '/files'), what).toHaveLength(0);
+      expect(w.calls.filter((c) => c.url.pathname.includes('/compare/')), what).toHaveLength(0);
       expect(w.calls.filter((c) => c.url.host === 'api.typesafe.ai'), what).toHaveLength(0);
       expect(runs, what).toHaveLength(1);
       expect(runs[0], what).toMatchObject({ head_sha: HEAD, status: 'completed', conclusion: 'failure' });
@@ -376,8 +453,8 @@ describe('screening', () => {
 
   it('github_calls_abort_at_the_deadline', async () => {
     quiet();
-    // Only the files call hangs; signing and the token exchange have ample headroom.
-    const w = world({ hang: (m, p) => m === 'GET' && p.endsWith('/files') });
+    // Only the compare (files) call hangs; signing and the token exchange have ample headroom.
+    const w = world({ hang: (m, p) => m === 'GET' && p.includes('/compare/') });
     vi.stubGlobal('fetch', w.fetch);
     const started = Date.now();
     await screenPullRequest(testEnv, event(), { workMs: 500, totalMs: 3_000 });

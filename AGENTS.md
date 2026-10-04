@@ -31,6 +31,8 @@ The key is case-insensitive and the first matching line counts. The History page
 
 At most 500 changed lines (additions plus deletions). The root `package-lock.json` doesn't count toward the limit. Larger PRs fail the gate.
 
+The gate also fails PRs that don't target `main`, and PRs that change 300 or more files.
+
 ### 3. Leave the protected paths alone
 
 PRs that touch any of these fail the gate:

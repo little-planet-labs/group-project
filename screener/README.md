@@ -12,7 +12,9 @@ still treats all PR content as hostile.
 1. `POST /` verifies `X-Hub-Signature-256` over the raw body. A bad or missing signature
    returns 401 before anything else happens.
 2. Only `pull_request` `opened`, `reopened`, `ready_for_review`, `synchronize`, and `edited`
-   (when the body changed) on open, non-draft PRs are screened. Everything else returns 200.
+   (when the body or the base branch changed) on open, non-draft PRs are screened. A base
+   change invalidates the previous verdict, so it is always re-screened. Everything else
+   returns 200.
 3. The Worker returns 202 and screens in `ctx.waitUntil`:
    - Mints an App JWT and exchanges it for an installation token.
    - Creates the `screen` check run as `in_progress` on the event's head SHA. It does this
@@ -21,11 +23,21 @@ still treats all PR content as hostile.
      any earlier one.
    - Reads the PR as GitHub has it now. The record supplies the text (title, description,
      labels) rather than the webhook snapshot, because deliveries can arrive out of order. It
-     never chooses which commit is judged: `pulls/:n/files` follows the record's head, so if
-     the record's head is not the event's SHA, the screening is stale (see below) and stops
-     before listing files or calling Jev.
-   - Lists the PR's files and builds the diff text. Lockfiles, `*.min.*`, `*.map`, and
-     binary or patchless files are listed by name only.
+     never chooses which commit is judged. If the record's head is not the event's SHA, the
+     screening is stale (see below) and stops before listing files or calling Jev.
+   - Issues a verdict only for PRs whose base is the repository's default branch
+     (`repository.default_branch`). Any other base ends as `error` with no PR writes. A diff
+     against another branch can leave out content that branch already holds, and a later base
+     change to the default branch would bring that content in unscreened.
+   - Lists the files of exactly the certified commit with the compare API,
+     `compare/<event base SHA>...<event head SHA>`. Both SHAs are immutable and come from the
+     signed event, and the base SHA is the default branch's commit (checked above).
+     `pulls/:n/files` is not used, because it describes whatever the head is at read time; a
+     force-push cycle H→C→H during screening would otherwise judge C's diff under H's
+     check. GitHub lists at most 300 files per comparison and does not say when it truncated,
+     so a listing of 300 or more files ends as `error`.
+   - Builds the diff text. Lockfiles, `*.min.*`, `*.map`, and binary or patchless files are
+     listed by name only.
    - Caps every PR-controlled field in Jev's state:
 
      | Field | Cap (characters) |
@@ -46,8 +58,8 @@ still treats all PR content as hostile.
    - Applies `src/policy.ts`. A PR that already carries a `rule:*` label (the owner reopened
      a PR the screener closed) is never closed again; it is labelled `needs-look` instead.
    - Re-reads the PR. The screening is stale if the PR is no longer open (for example a
-     concurrent screening closed it), its head is not the event's SHA, or its description
-     changed.
+     concurrent screening closed it), its head is not the event's SHA, its base is no longer
+     the default branch, or its description changed.
    - A stale screening publishes no verdict. It makes no PR writes and completes its check as
      outcome `error` (conclusion `failure`) with a note in the summary, so a stale snapshot can
      never be the newest `success` on a SHA.
@@ -77,7 +89,7 @@ Residual risks:
 - **GitHub's PR record can lag.** During GitHub degradation, the record can trail a webhook
   by a minute or more. The screening ends as `error` instead of judging the wrong content
   when:
-  - either read shows a SHA other than the event's;
+  - either read shows a SHA other than the event's, or a base other than the default branch;
   - the re-read shows a different description from the first read;
   - the re-read shows the PR as not open. This includes a `reopened` event whose record
     still says `closed`.
@@ -111,9 +123,20 @@ Secrets (names in `.dev.vars.example`; set each with `npx wrangler secret put <N
 
 - `GITHUB_APP_ID`
 - `GITHUB_APP_PRIVATE_KEY`: PKCS#8 PEM. GitHub issues PKCS#1 (`BEGIN RSA PRIVATE KEY`), so
-  convert it first:
-  `openssl pkcs8 -topk8 -inform PEM -outform PEM -nocrypt -in app.pem -out app-pkcs8.pem`,
-  then `npx wrangler secret put GITHUB_APP_PRIVATE_KEY < app-pkcs8.pem`.
+  convert it and upload it without writing the key anywhere in the repo. First save the
+  downloaded `.pem` in a password manager. Then, from `screener/`, move the download into a
+  throwaway temp directory outside the repo and pipe the converted key straight into wrangler:
+
+  ```sh
+  tmp=$(mktemp -d)
+  mv ~/Downloads/<app>.private-key.pem "$tmp/app.pem"
+  openssl pkcs8 -topk8 -inform PEM -outform PEM -nocrypt -in "$tmp/app.pem" \
+    | npx wrangler secret put GITHUB_APP_PRIVATE_KEY
+  rm -rf "$tmp"
+  ```
+
+  Afterwards the key exists only in the password manager and in the Worker secret; no copy
+  stays on disk.
 - `GITHUB_WEBHOOK_SECRET`
 - `TYPESAFE_API_KEY`: from console.typesafe.ai/keys
 

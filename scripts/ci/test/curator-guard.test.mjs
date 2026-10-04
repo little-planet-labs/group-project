@@ -82,7 +82,15 @@ test('curator_guard_blocks_leaks_and_bypasses', () => {
 		'GH_DEBUG=api gh pr view 3',
 		'"gh" pr view 3 \\',
 		"gh pr comment 3 --body 'unterminated",
-		'gh pr view 3 *'
+		'gh pr view 3 *',
+		// The PR is named by number only.
+		'gh pr view https://x.ghe.com/o/r/pull/1',
+		'gh pr diff evil/repo#1',
+		'gh pr merge o/r#3 --squash',
+		'gh pr comment --body "x" 3',
+		'gh pr close',
+		'gh pr view 3abc',
+		"gh pr view '' 3"
 	]) {
 		assert.notEqual(bash(command), null, command);
 	}

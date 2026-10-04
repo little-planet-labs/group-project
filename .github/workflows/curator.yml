@@ -31,9 +31,10 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: ci-secrets
-      deployment: false
     env:
       CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: '1'
+      # gh finds the repo here, because the workspace has no .git (below).
+      GH_REPO: ${{ github.repository }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -43,6 +44,10 @@ jobs:
             /scripts/ci/
             /curator/
             /AGENTS.md
+      # No .git in the workspace: claude-code-action's agent mode writes the App
+      # token into .git/config's remote URL, where an @-mention or Read could
+      # reach it. Without .git that write fails and the action carries on.
+      - run: rm -rf .git
       - uses: actions/setup-node@v7
         with:
           node-version: 24

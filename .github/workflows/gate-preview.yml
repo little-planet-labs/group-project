@@ -1,7 +1,7 @@
 # Gate + preview deploy. workflow_run always runs this file from the default
 # branch, with secrets, so it never checks out, installs or runs PR code. The
 # checkout is sparse: only protected paths, so no PR-controlled config file
-# (.npmrc, .env, package.json) is on disk when npx runs. Untrusted event fields
+# (.npmrc, .env, package.json) is on disk when npm or wrangler run. Untrusted event fields
 # are read by the scripts from GITHUB_EVENT_PATH, never interpolated.
 # The sparse checkout is load-bearing (docs/SETUP.md, spike 12): never widen it.
 name: Gate and preview
@@ -27,7 +27,6 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: ci-secrets
-      deployment: false
     steps:
       - uses: actions/checkout@v7
         with:
@@ -39,12 +38,16 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 24
+      # Lockfile-pinned wrangler, installed with lifecycle scripts disabled,
+      # before any token exists in the job and in a step with no secrets.
+      - run: npm ci --ignore-scripts --prefix scripts/ci/wrangler
       - id: app
         uses: actions/create-github-app-token@v3
         with:
           app-id: ${{ vars.GP_APP_ID }}
           private-key: ${{ secrets.GP_APP_PRIVATE_KEY }}
           permission-checks: write
+          permission-contents: read
           permission-pull-requests: write
       - id: pr
         run: node scripts/ci/resolve-pr.mjs
@@ -71,7 +74,7 @@ jobs:
       - if: steps.gate.outputs.passed == 'true'
         # The URLs come from wrangler's ND-JSON output file; stdout mixes progress
         # lines with the JSON and may carry account metadata, so it isn't printed.
-        run: npx --yes wrangler@4.147.0 preview --name "pr-$PR_NUMBER" --json > "$RUNNER_TEMP/preview.json"
+        run: node scripts/ci/wrangler/node_modules/wrangler/bin/wrangler.js preview --name "pr-$PR_NUMBER" --json > "$RUNNER_TEMP/preview.json"
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

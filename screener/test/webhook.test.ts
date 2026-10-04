@@ -101,6 +101,12 @@ describe('event filter', () => {
     }
   });
 
+  it('rescreens_when_base_changes', async () => {
+    const { res, w } = await signed(event({ action: 'edited', changes: { base: { ref: { from: 'feature-b' }, sha: { from: 'b'.repeat(40) } } } }));
+    expect(res.status).toBe(202);
+    expect(w.checkRuns()).toHaveLength(1);
+  });
+
   it('screens_ready_for_review', async () => {
     const { res, w } = await signed(event({ action: 'ready_for_review' }, { draft: false }));
     expect(res.status).toBe(202);

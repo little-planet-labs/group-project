@@ -33,20 +33,20 @@ The owner's checklist for wiring groupproject to GitHub and Cloudflare. Do it in
    - URL: the screener Worker URL
    - Secret: a long random string; save it for the screener's `GITHUB_WEBHOOK_SECRET`
    - Subscribe to events: **Pull request**
-4. Generate a private key and download the `.pem`.
+4. Generate a private key and download the `.pem` to a folder **outside the repo** and outside any folder an AI agent works in, such as `~/Downloads/app.pem` (the commands below use that path). Store the key in a password manager; that's its only lasting copy. Delete the `.pem` files as soon as sections 4 and 5 have used them.
 5. Note the **App ID** from the App's settings page.
 6. Install the App on `little-planet-labs/group-project` only.
 
 ## 4. Actions secrets and variables
 
-Secrets live **only** in the `ci-secrets` environment, whose deployment branch policy allows `main` only. Anyone with write access can push a branch whose workflow reads repo-level or org-level secrets; environment secrets reach only jobs that name the environment *and* run with `GITHUB_REF` = `main`. Every job that uses a secret declares `environment: { name: ci-secrets, deployment: false }`.
+Secrets live **only** in the `ci-secrets` environment, whose deployment branch policy allows `main` only. Anyone with write access can push a branch whose workflow reads repo-level or org-level secrets; environment secrets reach only jobs that name the environment *and* run with `GITHUB_REF` = `main`. Every job that uses a secret declares `environment: ci-secrets` (as `environment:` / `name: ci-secrets`). GitHub records a deployment for each such run; that UI noise is accepted, because GitHub documents branch policies for environments with deployments, and `deployment: false` isn't documented to keep them.
 
-1. Settings > Environments > `ci-secrets`: deployment branches and tags = **Selected branches and tags**, rule `main` only. No other protection rules (a custom deployment protection rule would break `deployment: false`).
+1. Settings > Environments > `ci-secrets`: deployment branches and tags = **Selected branches and tags**, rule `main` only.
 2. Set the four secrets in the environment. Each command prompts for the value (the key file is read from stdin):
 
    ```
    gh secret set ANTHROPIC_API_KEY --env ci-secrets --repo little-planet-labs/group-project
-   gh secret set GP_APP_PRIVATE_KEY --env ci-secrets --repo little-planet-labs/group-project < app.pem
+   gh secret set GP_APP_PRIVATE_KEY --env ci-secrets --repo little-planet-labs/group-project < ~/Downloads/app.pem
    gh secret set CLOUDFLARE_API_TOKEN --env ci-secrets --repo little-planet-labs/group-project
    gh secret set CLOUDFLARE_ACCOUNT_ID --env ci-secrets --repo little-planet-labs/group-project
    ```
@@ -63,7 +63,13 @@ Secrets live **only** in the `ci-secrets` environment, whose deployment branch p
 
    The last command should list no secrets.
 4. Keep the one repo variable (it isn't secret): `gh variable set GP_APP_ID --body <App ID from step 3.5> --repo little-planet-labs/group-project`.
-5. **Limit repo write access to the owner.** Remove write, maintain and admin from every other account, including agent accounts such as `lpl-bot`. Agents and everyone else contribute from forks, like any outside contributor. Write access lets an account push a branch that runs arbitrary workflows, and add or change environments' branch rules if it is an admin.
+5. **Repo write access: the owner, plus `lpl-bot` (owner's decision).** `lpl-bot` is the owner's own second account, used by coding agents, and keeps **Maintain**. Every other account gets no write access; other agents and everyone else contribute from forks. Accepted risks of `lpl-bot`'s Maintain:
+   - it can push branches, though their workflows can't read the `ci-secrets` secrets (main-only);
+   - it can dispatch the curator (`workflow_dispatch` on `main`);
+   - it can steer labels and titles, for example remove `needs-look` or `no-disclosure`, or rename a PR the curator will read;
+   - it can merge PRs whose App `gate` and `screen` checks passed (the ruleset still requires them).
+
+   Maintain can't change environments, secrets or rulesets; those need admin.
 6. On GitHub Free, environment secrets work only in public repositories. While the repo is private, they need the org on GitHub Team (or later). Otherwise the secret jobs see empty secrets until the repo goes public.
 
 ## 5. Screener Worker secrets
@@ -71,7 +77,15 @@ Secrets live **only** in the `ci-secrets` environment, whose deployment branch p
 Set these with `wrangler secret put <NAME>` in `screener/`:
 
 - `GITHUB_APP_ID`: the App ID
-- `GITHUB_APP_PRIVATE_KEY`: the App key as **PKCS#8** PEM. GitHub gives PKCS#1; convert it with `openssl pkcs8 -topk8 -nocrypt -in app.pem -out app-pkcs8.pem`.
+- `GITHUB_APP_PRIVATE_KEY`: the App key as **PKCS#8** PEM. GitHub gives PKCS#1. Convert it outside the repo, set it, then delete both files:
+
+  ```
+  openssl pkcs8 -topk8 -nocrypt -in ~/Downloads/app.pem -out ~/Downloads/app-pkcs8.pem
+  wrangler secret put GITHUB_APP_PRIVATE_KEY < ~/Downloads/app-pkcs8.pem
+  rm ~/Downloads/app.pem ~/Downloads/app-pkcs8.pem
+  ```
+
+  Run the `wrangler` line from `screener/`; the key files never go there.
 - `GITHUB_WEBHOOK_SECRET`: the webhook secret from step 3.3
 - `TYPESAFE_API_KEY`: from console.typesafe.ai/keys
 
@@ -148,13 +162,18 @@ Not verifiable without live accounts:
     - Run `TYPESAFE_API_KEY=… node eval/run.mjs`. It sends the 40 labelled cases in `screener/eval/cases/` to Jev and prints the outcome confusion, per-flag confusion and a per-flag threshold sweep. `--cached` reuses `eval/results.json` without calling Jev again.
     - From that output, tune `CLOSE_AT` (now 0.9) and `LOOK_AT` (now 0.35) in `screener/src/policy.ts`.
     - Re-run the eval after any change to `screener/src/questions.ts`.
-21. The `ci-secrets` environment: check that each secret job still gets its secrets on `main` (curator on `schedule` and `workflow_dispatch`, deploy on `push`, gate-preview on `workflow_run`, preview cleanup on `pull_request_target`), that no Deployment records appear (`deployment: false`), and that a `workflow_dispatch` of the curator from a non-`main` branch is refused before the job starts.
+21. The `ci-secrets` environment: check that each secret job still gets its secrets on `main` (curator on `schedule` and `workflow_dispatch`, deploy on `push`, gate-preview on `workflow_run`, preview cleanup on `pull_request_target`), that a `workflow_dispatch` of the curator from a non-`main` branch, started by a non-admin account (`lpl-bot`), is refused before the job starts, and that a PR closed against a non-default base gets no secrets. One GitHub deployment record per run is expected.
+22. The pinned wrangler installs with `npm ci --ignore-scripts` (esbuild's and workerd's postinstall scripts don't run). An offline `deploy --dry-run` worked that way on macOS; check `preview`, `deploy` and `preview delete` on the Linux runner. If one fails for lack of an install script, don't re-enable scripts in the job; report it first.
+23. The gate resolves `refs/heads/{default_branch}` to its commit (`GET /repos/{repo}/git/ref/heads/{default_branch}`), lists files with `GET /repos/{repo}/compare/{that_sha}...{head_sha}?per_page=1`, and fails any PR whose base isn't the default branch. Its App token has `contents: read` for those two calls. Check that compare works for a fork PR's head SHA in the base repo, that a PR with 300 or more changed files fails the gate, and that retargeting a PR to another branch fails it.
+24. The curator workspace has no `.git`. Check that every allowed gh command (`gh pr list/view/diff/comment/merge/close`, `gh issue create/list`) works with `GH_REPO` alone, that claude-code-action's git-auth step only logs an error, and that the checkout post-step doesn't fail the job.
+25. Check that a PR title with `@AGENTS.md` or `/model x` reaches the curator as escaped JSON (`\u0040`, `\u002f`) and pulls in no file contents.
+26. Retarget a test PR from a feature branch to `main` without pushing (same head SHA), and check that the screener posts a new `screen` check run for it. Also check that a PR whose base isn't the default branch ends as `error` in the screener and fails the gate.
 
 ## 9. Workflow security checklist
 
 `scripts/ci/test/workflows.snapshot.json` pins the sha256 of every file in `.github/workflows/`, of `wrangler.jsonc`, and of every `scripts/ci/*.mjs` (not the tests), because secret jobs run or read them. Any change fails the test `workflows_match_reviewed_snapshot`. Before you update the snapshot, check the changed workflow against this list:
 
-1. **No PR code in a job that holds secrets.** A job that references `secrets.`, mints an App token, or runs on `workflow_run` or `pull_request_target` never checks out a PR ref, never runs `npm`, `npx` (other than the pinned wrangler) or a contributor script, and runs only `node scripts/ci/*.mjs`, the pinned `npx --yes wrangler@<version>`, and plain `mv` of a validated directory. One more step is allowed, in the curator job only: installing `bubblewrap` and `socat` with `apt-get` from Ubuntu's signed repositories, lifting the AppArmor unprivileged-user-namespace restriction, and checking `bwrap --ro-bind / / --unshare-pid true`. `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB` needs bubblewrap, and these commands match claude-code-action's own isolation setup. They run before any token is minted and execute no contributor code. A `pull_request_target` workflow has no checkout at all.
+1. **No PR code in a job that holds secrets.** A job that references `secrets.`, mints an App token, or runs on `workflow_run` or `pull_request_target` never checks out a PR ref and never runs `npx`, a contributor script, or any `npm` command except `npm ci --ignore-scripts --prefix scripts/ci/wrangler`. That install runs from the committed lockfile in `scripts/ci/wrangler/` (wrangler pinned exactly), with lifecycle scripts off, in a step with no secrets, before any token is minted. The job then runs only `node scripts/ci/*.mjs`, `node scripts/ci/wrangler/node_modules/wrangler/bin/wrangler.js …`, plain `mv` of a validated directory, and, in the curator job, `rm -rf .git` right after checkout (claude-code-action would otherwise write the App token into `.git/config`; `GH_REPO` gives gh the repo). One more step is allowed, in the curator job only: installing `bubblewrap` and `socat` with `apt-get` from Ubuntu's signed repositories, lifting the AppArmor unprivileged-user-namespace restriction, and checking `bwrap --ro-bind / / --unshare-pid true`. `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB` needs bubblewrap, and these commands match claude-code-action's own isolation setup. They run before any token is minted and execute no contributor code. A `pull_request_target` workflow checks out only `/scripts/ci/wrangler/` from the default branch (sparse, `persist-credentials: false`, no `ref`).
 2. **No untrusted `${{ }}` where a shell or the runner acts on it.** PR-controlled fields (titles, bodies, branch names, commit messages, labels, step outputs that carry them) never appear in `run`, `shell`, `working-directory`, or an `env` *name*. They reach scripts only as `env` values. No `NODE_OPTIONS`, `PATH`, `LD_PRELOAD` or similar from any source.
 3. **Sparse checkout with `persist-credentials: false`** in every job with secrets: non-cone mode, protected paths only, no `ref` or `repository` input.
 4. **No workflow-level `env:` or `defaults:` that hold secrets** or set the shell or working directory. Secrets go on the step that needs them.
@@ -162,6 +181,46 @@ Not verifiable without live accounts:
 6. **Least-privilege tokens:** `permissions:` set at the workflow level, and every `create-github-app-token` step lists its `permission-*` inputs. Only the gate writes checks.
 7. **No PR-controlled values in runner files.** Scripts never write PR-controlled values to `GITHUB_ENV`/`GITHUB_PATH`; multi-line `GITHUB_OUTPUT` uses a random delimiter.
 8. **Config read by tools in secret jobs gets the same review.** `wrangler.jsonc` is read by wrangler in the gate-preview and deploy jobs; it must never gain a `build` command.
-9. **Secrets live only in the main-only `ci-secrets` environment.** Every job that references `secrets.` declares `environment: { name: ci-secrets, deployment: false }`; no job that runs contributor code (npm, PR builds) declares it. No repo-level or org-level copies of the secrets exist (§4).
+9. **Secrets live only in the main-only `ci-secrets` environment.** Every job that references `secrets.` declares `environment: ci-secrets`, never with `deployment: false`; no job that runs contributor code (npm, PR builds) declares it. No repo-level or org-level copies of the secrets exist (§4).
 
 Then regenerate the snapshot (the sha256 of each file, as in the test) and record in the PR who reviewed it.
+
+## 10. Rotation runbook
+
+After a suspected leak, rotate in this order (most damaging first), then check for damage. Each new secret goes only to the `ci-secrets` environment or the screener Worker, never to repo-level secrets.
+
+1. **Cloudflare API token.** Roll it in Cloudflare (My Profile > API Tokens > Roll), then `gh secret set CLOUDFLARE_API_TOKEN --env ci-secrets --repo little-planet-labs/group-project`. Its scope covers the screener Worker too (see section 11), so do this first.
+2. **GitHub App private key.** Generate a new key in the App settings and download it outside the repo and any agent's folder (for example `~/Downloads/new.pem`). Then update both copies:
+   - `gh secret set GP_APP_PRIVATE_KEY --env ci-secrets --repo little-planet-labs/group-project < ~/Downloads/new.pem`
+   - the screener's PKCS#8 copy: `openssl pkcs8 -topk8 -nocrypt -in ~/Downloads/new.pem -out ~/Downloads/new-pkcs8.pem`, then, from `screener/`, `wrangler secret put GITHUB_APP_PRIVATE_KEY < ~/Downloads/new-pkcs8.pem`.
+
+   Then `rm ~/Downloads/new.pem ~/Downloads/new-pkcs8.pem`, replace the key in your password manager, and delete the old key in the App settings.
+3. **Webhook secret.** Set a new one in the App's webhook settings and with `wrangler secret put GITHUB_WEBHOOK_SECRET` in `screener/`, back to back (webhooks fail in between).
+4. **Anthropic API key.** Create a new key, `gh secret set ANTHROPIC_API_KEY --env ci-secrets --repo little-planet-labs/group-project`, then revoke the old one.
+5. **TypeSafe API key.** Create a new key at console.typesafe.ai/keys, `wrangler secret put TYPESAFE_API_KEY` in `screener/`, then revoke the old one.
+
+Then check:
+- **Pushed branches and tags:** `gh api repos/little-planet-labs/group-project/branches --paginate --jq '.[].name'` and the tags list. Delete anything you don't recognise.
+- **App-posted checks:** recent `gate` and `screen` check runs on open PRs, for any that don't match a real gate or screener run (Actions logs, Worker logs).
+- **Unexpected merges:** `git log origin/main` since the suspected leak; revert anything the curator or an agent shouldn't have merged.
+- **Cloudflare:** the Worker deployments and versions for `groupproject` and the screener, and any Workers or routes you didn't create.
+- **Comments and issues** posted by the App bot that the curator didn't write.
+
+## 11. Accepted risks
+
+Recorded so they're decisions, not surprises.
+
+- **Org-wide GitHub Apps.** Apps installed on every `little-planet-labs` repo (Vercel, Claude, Linear) hold workflows or admin write on this repo too. A compromise of any of them could change workflows or settings here. The owner accepts this.
+- **Cloudflare token blast radius.** The token's Workers Scripts edit scope covers every Worker on the account, including the screener, whose secrets include the App private key: with the token, someone could deploy a screener that exfiltrates them. The owner's priority is that the token can't leak. The controls that keep it from leaking:
+  - it lives only in the main-only `ci-secrets` environment (section 4);
+  - no job that holds it runs PR code (section 9, item 1);
+  - wrangler is lockfile-pinned and installed with lifecycle scripts off;
+  - the jobs use sparse checkouts of protected paths only;
+  - the rotation runbook (section 10) puts it first.
+
+  Containment options considered and deferred: a separate GitHub App for the screener, so its key isn't the curator's and the gate's; and a separate Cloudflare account for the site Worker, so the deploy token can't touch the screener.
+- **`lpl-bot` keeps Maintain** (section 4, item 5).
+- **Local AI agents read the checkout.** An agent working in the repo can read any file in it, including gitignored ones (`.dev.vars`, `*.pem`): `.gitignore` stops commits, not reads. So keys and secrets never sit in the checkout, even briefly (sections 3, 5 and 10).
+- **The current App key copies in the checkout.** `screener/app.pem` and `screener/app-pkcs8.pem` are in the owner's checkout. They're gitignored and were never committed, but AI agents have worked in that folder, so the key may have been read. The owner chose not to rotate the key and not to delete these copies. If he changes his mind, rotate with section 10, step 2, then delete both files. The guidance in sections 3 and 5 still applies to future keys.
+- **A guard-hook timeout isn't blocked.** Claude Code doesn't block a tool call when its PreToolUse hook times out, so a stalled `curator-guard.mjs` call falls through to the other layers: the `--allowedTools`/`--disallowedTools` rules, the scoped Read, the env scrub and the curator token's permissions. Spike 13 checks the guard answers quickly.
+- **One GitHub deployment record per secret job run**, accepted to keep documented environment branch policies (section 4).

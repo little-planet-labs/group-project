@@ -60,6 +60,11 @@ export function decide(input, { agentsPath, shotsDir }) {
 		if (program !== 'gh' || !ALLOWED[group]?.includes(sub)) {
 			return 'Only gh pr list/view/diff/comment/merge/close and gh issue create/list are allowed.';
 		}
+		// The PR or issue is named by number only: a URL or owner/repo#n could
+		// point gh at another host or repository.
+		if (sub !== 'list' && sub !== 'create' && !/^\d+$/.test(words[3] ?? '')) {
+			return `Name the PR by its number right after "gh ${group} ${sub}".`;
+		}
 		const flag = words.find(
 			(w) => LONG_FLAGS.some((f) => w === f || w.startsWith(`${f}=`)) || SHORT_FLAGS.test(w)
 		);

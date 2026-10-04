@@ -41,19 +41,32 @@ export function evaluateGate({ files, buildConclusion }) {
 	return { passed: reasons.length === 0, reasons, lines };
 }
 
-export async function runGate(gh, repo, { number, headSha, buildConclusion }) {
-	const before = await gh.request('GET', `/repos/${repo}/pulls/${number}`);
-	const files = await gh.paginate(`/repos/${repo}/pulls/${number}/files?per_page=100`);
-	const after = await gh.request('GET', `/repos/${repo}/pulls/${number}`);
-	const result = evaluateGate({ files, buildConclusion });
-	// The files endpoint describes the PR's current head. If the head moved while
-	// we looked, the list may not describe headSha, so fail closed.
-	if (before.head.sha !== headSha || after.head.sha !== headSha) {
-		result.reasons.push('The PR head changed during the gate; push again to re-run it'); // OWNER-REVIEW placeholder
+// The compare API caps its file list at 300, for the whole comparison.
+export const COMPARE_FILE_CAP = 300;
+
+export async function runGate(gh, repo, { number, headSha, buildConclusion, defaultBranch }) {
+	// Files come from comparing the default branch's commit with the pinned headSha
+	// (three-dot: from their merge base), never from /pulls/{n}/files, which
+	// follows the PR's moving head, and never from the PR's base, which its author
+	// can retarget to a branch that already holds protected or bulk changes.
+	// per_page=1: GitHub documents the full-comparison file list for paged calls;
+	// unpaged calls stop at 250 commits.
+	// The default branch is resolved to its commit through refs/heads/, so a tag
+	// with the same name can't stand in for it. No such branch commit: throw, and
+	// no gate check is posted, so the PR stays ineligible.
+	const pr = await gh.request('GET', `/repos/${repo}/pulls/${number}`);
+	const ref = await gh.request('GET', `/repos/${repo}/git/ref/heads/${defaultBranch}`);
+	if (ref?.object?.type !== 'commit' || !/^[0-9a-f]{40}$/.test(ref.object.sha ?? '')) {
+		throw new Error(`refs/heads/${defaultBranch} is not a commit`);
 	}
-	// The files endpoint stops at 3000 files; an incomplete list could hide a protected path.
-	if (files.length < after.changed_files) {
-		result.reasons.push(`Listed ${files.length} of ${after.changed_files} changed files`); // OWNER-REVIEW placeholder
+	const { files } = await gh.request('GET', `/repos/${repo}/compare/${ref.object.sha}...${headSha}?per_page=1`);
+	const result = evaluateGate({ files: files ?? [], buildConclusion });
+	if (pr.base.ref !== defaultBranch) {
+		result.reasons.push(`The PR must target ${defaultBranch}`); // OWNER-REVIEW placeholder
+	}
+	// A missing or capped list could hide a protected path, so fail closed.
+	if (!Array.isArray(files) || files.length >= COMPARE_FILE_CAP) {
+		result.reasons.push(`Couldn't list every changed file (the limit is ${COMPARE_FILE_CAP - 1})`); // OWNER-REVIEW placeholder
 	}
 	result.passed = result.reasons.length === 0;
 	await gh.request('POST', `/repos/${repo}/check-runs`, {
@@ -74,11 +87,12 @@ export async function runGate(gh, repo, { number, headSha, buildConclusion }) {
 
 if (isMain(import.meta.url)) {
 	const gh = createGitHub({ token: env('GH_TOKEN'), api: process.env.GITHUB_API_URL });
-	const run = readEvent().workflow_run;
+	const event = readEvent();
 	const result = await runGate(gh, env('GITHUB_REPOSITORY'), {
 		number: Number(env('PR_NUMBER')),
-		headSha: run.head_sha,
-		buildConclusion: run.conclusion
+		headSha: event.workflow_run.head_sha,
+		buildConclusion: event.workflow_run.conclusion,
+		defaultBranch: event.repository.default_branch
 	});
 	console.log(result.passed ? 'gate passed' : `gate failed:\n${result.reasons.join('\n')}`);
 	setOutput('passed', result.passed);

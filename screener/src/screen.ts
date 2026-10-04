@@ -1,5 +1,5 @@
 import { existingFilesTouched, parseMadeBy, reviewState } from './gather.ts';
-import { GitHubError, gitHubClient, installationToken, listPullFiles, type GitHub } from './github.ts';
+import { GitHubError, gitHubClient, installationToken, listCommitFiles, type GitHub } from './github.ts';
 import { askJev, type Judgments } from './jev.ts';
 import { CONCLUSION, LOOK_AT, decide, type Outcome } from './policy.ts';
 
@@ -12,9 +12,9 @@ export interface Env {
 
 export interface PullRequestEvent {
   action: string;
-  changes?: { body?: unknown };
+  changes?: { body?: unknown; base?: unknown };
   installation: { id: number };
-  repository: { full_name: string };
+  repository: { full_name: string; default_branch: string };
   pull_request: {
     number: number;
     state: string;
@@ -22,16 +22,18 @@ export interface PullRequestEvent {
     title: string;
     body: string | null;
     head: { sha: string };
+    base: { sha: string; ref: string };
     labels: { name: string }[];
   };
 }
 
 const ACTIONS = new Set(['opened', 'reopened', 'ready_for_review', 'synchronize', 'edited']);
 
-// Only new, reopened or newly non-draft PRs, new head commits, and description edits are screened.
+// Only new, reopened or newly non-draft PRs, new head commits, and description or base
+// changes are screened. A base change invalidates the previous verdict.
 export function shouldScreen(event: string | null, payload: PullRequestEvent): boolean {
   if (event !== 'pull_request' || !ACTIONS.has(payload.action)) return false;
-  if (payload.action === 'edited' && !payload.changes?.body) return false;
+  if (payload.action === 'edited' && !payload.changes?.body && !payload.changes?.base) return false;
   return payload.pull_request.state === 'open' && !payload.pull_request.draft;
 }
 
@@ -116,9 +118,12 @@ function summary(r: ScreenReport, note?: string): string {
   return lines.join('\n');
 }
 
-// OWNER-REVIEW placeholder copy: summary note for a screening that publishes no verdict.
+// OWNER-REVIEW placeholder copy: summary note for a stale screening (no verdict).
 export const NOTE_PR_CHANGED =
   'No verdict: the PR changed, was closed, or was not yet updated on GitHub during screening. Labels were not changed.';
+// OWNER-REVIEW placeholder copy: summary note for a PR whose base is not the default branch.
+export const NOTE_NOT_DEFAULT_BASE =
+  'No verdict: the PR does not target the default branch. Labels were not changed.';
 
 // Workers cancels waitUntil work 30s after the response. Screening calls abort at workMs so
 // the check run can still be completed (or marked error) by totalMs.
@@ -127,6 +132,7 @@ const JEV_TIMEOUT_MS = 15_000;
 
 interface PullState {
   state: string;
+  base: { ref: string };
   title: string;
   body: string | null;
   head: { sha: string };
@@ -162,17 +168,23 @@ export async function screenPullRequest(env: Env, payload: PullRequestEvent, bud
     // A stale screening publishes no verdict: it completes its check as `error`, which is never
     // success, and writes nothing to the PR.
     const done = finish;
-    const stale = async () => {
-      await done('PATCH', `/repos/${repo}/check-runs/${checkId}`, completion(sha, 'error', madeBy, judgments, existing, NOTE_PR_CHANGED));
+    const stale = async (note = NOTE_PR_CHANGED) => {
+      await done('PATCH', `/repos/${repo}/check-runs/${checkId}`, completion(sha, 'error', madeBy, judgments, existing, note));
     };
 
+    // A verdict is only ever measured against the default branch: a diff against another base
+    // can leave out content that a later base change to the default branch would bring in.
+    const defaultBranch = payload.repository.default_branch;
+    if (payload.pull_request.base.ref !== defaultBranch) return await stale(NOTE_NOT_DEFAULT_BASE);
+
     // Take the text (title, description, labels) as it is now, not the webhook's snapshot:
-    // deliveries arrive out of order. The PR record never chooses which commit is judged:
-    // `pulls/:n/files` follows the record's head, so it must be the event's SHA.
+    // deliveries arrive out of order. The PR record never chooses which commit is judged: the
+    // files come from the event's own SHAs, so they are exactly the commit this check certifies.
     const pr = await gh<PullState>('GET', `/repos/${repo}/pulls/${number}`);
     madeBy = parseMadeBy(pr.body);
-    if (pr.head.sha !== sha) return await stale();
-    const files = await listPullFiles(gh, repo, number);
+    if (pr.head.sha !== sha || pr.base.ref !== defaultBranch) return await stale();
+    // Base: the default branch's commit from the signed event (checked above); head: pinned.
+    const files = await listCommitFiles(gh, repo, payload.pull_request.base.sha, sha);
     existing = existingFilesTouched(files);
     judgments = await askJev(
       env.TYPESAFE_API_KEY,
@@ -180,10 +192,15 @@ export async function screenPullRequest(env: Env, payload: PullRequestEvent, bud
       Math.min(JEV_TIMEOUT_MS, workDeadline - Date.now()),
     );
 
-    // Re-read before any PR write. If the head or description moved, or the PR was closed
-    // (for example by a concurrent screening), this verdict is stale.
+    // Re-read before any PR write. If the head, base or description moved, or the PR was
+    // closed (for example by a concurrent screening), this verdict is stale.
     const now = await gh<PullState>('GET', `/repos/${repo}/pulls/${number}`);
-    if (now.state !== 'open' || now.head.sha !== sha || (now.body ?? '') !== (pr.body ?? '')) {
+    if (
+      now.state !== 'open' ||
+      now.head.sha !== sha ||
+      now.base.ref !== defaultBranch ||
+      (now.body ?? '') !== (pr.body ?? '')
+    ) {
       return await stale();
     }
     const decision = decide(judgments, madeBy, now.labels.map((l) => l.name));
