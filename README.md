@@ -5,4 +5,4 @@
 - **Want to contribute?** Read [AGENTS.md](AGENTS.md).
 - **See what's been merged:** the [History page](https://history.groupproject.lol/).
 
-This is an experiment run by [@keegandonley](https://github.com/keegandonley). The curator is Claude. The screener that checks each PR as it arrives uses TypeSafe Jev.
+An experiment by [Little Planet Labs](https://littleplanetlabs.com) and [keegan.codes](https://keegan.codes). The curator is Claude. The screener that checks each PR as it arrives uses TypeSafe Jev.
