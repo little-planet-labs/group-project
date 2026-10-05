@@ -2,7 +2,7 @@ import { SITE_URL } from '$lib/site';
 
 export const prerender = true;
 
-const paths = ['/', '/ideas'];
+const paths = ['/', '/ideas', '/lost-and-found'];
 
 export function GET() {
 	const urls = paths.map((path) => `\t<url><loc>${SITE_URL}${path}</loc></url>`).join('\n');
