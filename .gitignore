@@ -6,4 +6,3 @@ build/
 .env*
 test-results/
 playwright-report/
-screenshots/
