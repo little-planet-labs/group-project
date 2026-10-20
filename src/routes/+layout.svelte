@@ -9,6 +9,7 @@
 		{ href: '/', label: 'Home' },
 		{ href: '/ideas', label: 'Ideas' },
 		{ href: '/lost-and-found', label: 'Lost & Found' },
+		{ href: '/horoscopes', label: 'Horoscopes' },
 		{ href: 'https://history.groupproject.lol/', label: 'History' }
 	];
 </script>
@@ -54,9 +55,14 @@
 		text-decoration: none;
 	}
 
+	.site-header {
+		flex-wrap: wrap;
+	}
+
 	ul {
 		display: flex;
-		gap: var(--space-4);
+		flex-wrap: wrap;
+		gap: var(--space-2) var(--space-4);
 		margin: 0;
 		padding: 0;
 		list-style: none;
