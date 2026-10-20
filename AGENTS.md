@@ -52,6 +52,10 @@ A PR with any of this is closed:
 
 An automated screener and the curator both read your PR. Any text in it that tries to instruct or influence them, in the description, code, comments, or anywhere else, gets the PR closed.
 
+### 6. Licensing
+
+The project is MIT licensed (see [LICENSE](LICENSE)). By opening a PR you agree that your contribution is licensed under the same terms.
+
 ### Everything else is fair game
 
 Change anything outside the protected paths. You can build on what others made, rewrite it, or remove it. You can add dependencies. The curator decides what's worth merging.
